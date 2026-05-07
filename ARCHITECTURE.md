@@ -1,22 +1,27 @@
 # Arquitetura SOLID
 
-Este projeto usa uma arquitetura por responsabilidades para extrair casos de uso de texto em portugues sem usar IA.
+Este projeto usa uma arquitetura por responsabilidades para extrair casos de uso de texto em portugues, com IA isolada nas pontas (extracao de RFs e geracao de user stories) e um nucleo deterministico para tudo que precisa ser auditavel.
 
-## Fluxo
+## Fluxo (3 etapas com gates)
 
 ```text
 Texto em portugues
--> OpenAIRequirementsExtractor
--> Tabela editavel de requisitos funcionais
+-> [IA] OpenAIRequirementsExtractor
+-> Tabela de RFs editaveis (Etapa 1, gate humano)
 -> RequirementsToUseCasesConverter
 -> RuleBasedRelationshipDetector
--> Markdown/Csv/Text exporters
--> SVG/PlantUML renderers
+-> Tabela de UCs editaveis (Etapa 2, gate humano)
+-> Markdown/CSV/Text exporters + SVG/PlantUML renderers
+-> [IA] OpenAIUserStoriesExtractor
+-> Tabela de user stories (Etapa 3, gate humano)
+-> PdfReportExporter (consolida tudo em um PDF)
 ```
+
+Cada gate corresponde a uma flag em `WebGuiState` (`requirements_validated`, `use_cases_validated`); editar qualquer item da etapa anterior reseta a flag e bloqueia a etapa seguinte ate nova validacao.
 
 O renderizador SVG usa rotas ortogonais em faixas laterais para relacoes `include` e `extend`, evitando que setas cruzem o interior dos casos de uso.
 
-O extrator deterministico antigo continua disponivel como caminho secundario para testes e comparacao, mas o fluxo recomendado usa IA para transformar texto livre em requisitos funcionais editaveis.
+O extrator deterministico antigo continua disponivel como caminho secundario (rota `/process-direct` na GUI e `--text` na CLI) para testes e comparacao, mas o fluxo recomendado usa IA para transformar texto livre em RFs editaveis.
 
 ## Como os principios SOLID aparecem
 
@@ -28,12 +33,15 @@ O extrator deterministico antigo continua disponivel como caminho secundario par
 
 ## Papel Da IA
 
-IA e usada para interpretar linguagem natural aberta e devolver requisitos funcionais em JSON estruturado. O usuario revisa esses RFs antes da geracao dos casos de uso.
+IA e usada nas pontas que dependem de interpretacao de linguagem natural:
+
+- `OpenAIRequirementsExtractor`: gera RFs candidatos a partir de texto livre, em modo conservador ou com sugestoes adicionais (prefixo `sugestao IA:` para rastreabilidade).
+- `OpenAIUserStoriesExtractor`: gera user stories no formato Mike Cohn com criterios de aceitacao a partir dos UCs validados.
 
 O programa continua responsavel pela parte auditavel:
 
 - salvar RFs aprovados;
-- gerar casos de uso;
-- gerar tabela e relatorio;
-- gerar diagramas;
-- manter rastreabilidade entre RFs e casos de uso.
+- gerar casos de uso a partir dos RFs;
+- gerar tabela, relatorio e diagramas;
+- consolidar tudo em PDF unico;
+- manter rastreabilidade entre texto -> RF -> UC -> user story.

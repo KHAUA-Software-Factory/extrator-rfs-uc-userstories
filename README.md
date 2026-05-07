@@ -71,8 +71,11 @@ Na interface, o fluxo tem **3 gates de validacao** que voce controla, alternando
 **Etapa 2 - Casos de uso**
 
 6. Clique em `Gerar casos de uso` (so funciona se a etapa 1 estiver validada).
-7. Revise a tabela de UCs, o diagrama SVG e o relatorio textual.
-8. Clique em `Validar casos de uso` para fechar a etapa 2. Isso libera o botao `Gerar User Stories com IA`.
+7. Revise os UCs na **tabela editavel**: `ID`, `Atores` (nomes separados por virgula), `Nome`, `Descricao`, `Gatilho` e `Pre-condicoes` (uma por linha) podem ser ajustados in loco.
+   - `Salvar casos de uso` persiste suas edicoes e regenera diagrama, CSV, Markdown, PlantUML e relatorio textual a partir da nova lista.
+   - `Adicionar caso de uso` cria uma linha em branco com proximo `UCNNN`.
+   - `Remover` em qualquer linha exclui o UC; relacoes `<<include>>`/`<<extend>>` que perdem origem ou destino sao descartadas automaticamente.
+8. Clique em `Validar casos de uso` (ou `Revalidar` se ja validado) para fechar a etapa 2 e liberar o botao `Gerar User Stories com IA`. Qualquer edicao apos a validacao volta a etapa para o estado pendente.
 
 **Etapa 3 - User Stories**
 
@@ -80,6 +83,8 @@ Na interface, o fluxo tem **3 gates de validacao** que voce controla, alternando
 10. Clique em `Baixar PDF completo` para receber tudo em um unico arquivo.
 
 A qualquer momento o botao `Baixar PDF com estado atual` (no canto da tabela de RFs) tambem gera o PDF do que ja foi produzido.
+
+No cabecalho ha tambem o botao **`Resetar pipeline`**: apos confirmacao, ele zera o texto de descricao, RFs, UCs, user stories e ambas as flags de validacao, devolvendo a sessao a um estado limpo (uma nova analise pode comecar do zero). E util quando se troca completamente o sistema sob analise.
 
 Por padrao, `gui.py` abre uma interface web local para evitar problemas de Tkinter no macOS/Homebrew.
 
