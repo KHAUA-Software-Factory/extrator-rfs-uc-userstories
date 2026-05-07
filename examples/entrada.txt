@@ -1,0 +1,8 @@
+O cliente pode realizar login no sistema.
+O cliente pode consultar pedidos.
+Para consultar pedidos, o cliente deve realizar login.
+O cliente pode cancelar pedido quando o pedido ainda não foi enviado.
+Cancelar pedido estende consultar pedidos quando o pedido ainda não foi enviado.
+O administrador deve cadastrar produto.
+O administrador deve gerar relatório gerencial.
+Gerar relatório gerencial inclui consultar pedidos.
