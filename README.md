@@ -1,16 +1,192 @@
 # Extrator SOLID de Casos de Uso
 
-Projeto em Python para receber uma descricao em linguagem natural em portugues, identificar casos de uso por regras deterministicas e gerar:
+Aplicacao em Python que recebe uma descricao em linguagem natural em portugues e produz, em 3 etapas com validacao humana entre elas:
 
-- tabela Markdown com casos de uso descritos;
-- CSV com os casos identificados;
-- relatorio textual detalhado;
-- diagrama SVG plotado diretamente, com roteamento lateral para evitar sobreposicao entre `include` e `extend`;
-- diagrama PlantUML para renderizadores externos;
-- user stories no formato Mike Cohn ("Como ... eu quero ... para ...") geradas pela IA a partir dos casos de uso validados;
-- relatorio PDF unico com todas as etapas em sequencia (descricao livre, RFs, tabela de casos de uso, diagrama, relatorio textual, PlantUML e user stories).
+1. **Requisitos funcionais** extraidos com IA, editaveis em tabela.
+2. **Casos de uso UML** (atores, descricao, gatilho, pre-condicoes, relacoes `<<include>>`/`<<extend>>`), tambem editaveis.
+3. **User stories** no formato Mike Cohn ("Como ... eu quero ... para ..."), com criterios de aceitacao em estilo Gherkin, geradas pela IA a partir dos casos de uso aprovados.
 
-O fluxo principal usa IA apenas para extrair requisitos funcionais a partir do texto livre. Depois disso, o usuario revisa os RFs e o programa gera casos de uso, tabela e diagramas a partir dos requisitos aprovados.
+Saidas geradas:
+
+- `requisitos_funcionais.{json,md}`
+- `tabela_casos_de_uso.md`, `casos_de_uso.csv`, `relatorio_casos_de_uso.txt`
+- `diagrama_casos_de_uso.svg`, `diagrama_casos_de_uso.puml`
+- `user_stories.{json,md}`
+- `relatorio_completo.pdf` (consolidado, com todas as etapas em sequencia)
+
+---
+
+# Passo a passo - rodar em qualquer maquina (Windows, macOS, Linux)
+
+So precisa de **3 coisas**: Docker Desktop, este projeto descompactado e uma chave da OpenAI.
+
+## 1) Instalar o Docker Desktop
+
+- **Windows:** [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) -> "Docker Desktop for Windows" -> instale (o instalador habilita WSL2 sozinho) -> reinicie se ele pedir.
+- **macOS:** [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) -> escolha **Apple Silicon** (M1/M2/M3/M4) ou **Intel** conforme o Mac -> arraste para `Aplicativos`.
+- **Linux:** siga [docs.docker.com/desktop/install/linux](https://docs.docker.com/desktop/install/linux/) ou instale via gerenciador (`sudo apt install docker.io docker-compose-plugin` no Debian/Ubuntu).
+
+Abra o app e espere o icone do Docker mostrar **"running"** na barra de status. Sem isso, nada funciona.
+
+Conferir no terminal:
+
+```bash
+docker --version
+docker compose version
+```
+
+Devem aparecer versoes (algo como `Docker version 27.x` e `Docker Compose version v2.x`).
+
+## 2) Pegar o projeto
+
+**Opcao A** - descompactar o `.zip` recebido:
+
+- Windows: clique direito no zip -> `Extrair tudo`.
+- macOS: duplo clique no zip.
+- Linux: `unzip extrator-rfs-uc-userstories.zip`.
+
+**Opcao B** - clonar do GitHub (precisa ter `git` e acesso ao repositorio):
+
+```bash
+git clone https://github.com/gilbertofalco/extrator-rfs-uc-userstories.git
+```
+
+## 3) Abrir um terminal na pasta do projeto
+
+- **Windows:** abra **PowerShell** (Menu Iniciar -> digite `powershell`).
+- **macOS:** abra **Terminal** (`Cmd + Espaco` -> "Terminal").
+- **Linux:** qualquer terminal (`gnome-terminal`, `konsole`, etc.).
+
+```bash
+cd extrator-rfs-uc-userstories
+```
+
+(No Windows, ajuste o caminho conforme o local onde extraiu, ex.: `cd C:\Users\SEU_USUARIO\Downloads\extrator-rfs-uc-userstories`.)
+
+## 4) Criar o arquivo `.env` com a chave da OpenAI
+
+A chave e gerada em [platform.openai.com/api-keys](https://platform.openai.com/api-keys) (precisa estar logado e ter saldo/cartao configurado).
+
+**macOS / Linux:**
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+**Windows (PowerShell):**
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+No editor, troque a linha `OPENAI_API_KEY=sua_chave_aqui` por:
+
+```text
+OPENAI_API_KEY=sk-proj-...    # cole aqui a sua chave
+```
+
+Salve e feche.
+
+## 5) Subir o container
+
+```bash
+docker compose up --build -d
+```
+
+A primeira vez demora **2 a 5 minutos** (baixa Python 3.12-slim e instala dependencias). Proximas vezes sobe em segundos.
+
+Conferir se esta rodando:
+
+```bash
+docker compose ps
+```
+
+Deve aparecer `extrator-casos-de-uso` com status `Up` e `(healthy)` apos uns 30 segundos.
+
+Para acompanhar log em tempo real:
+
+```bash
+docker compose logs -f app
+```
+
+(`Ctrl+C` sai dos logs sem derrubar o container.)
+
+## 6) Abrir no navegador
+
+[http://localhost:8765](http://localhost:8765)
+
+## 7) Usar a interface (3 etapas com gates)
+
+**Etapa 1 - Requisitos funcionais**
+
+1. Cole a descricao livre do sistema (ex.: "totem do McDonalds com pagamento por aproximacao").
+2. (Opcional) marque `Sugerir requisitos adicionais com IA` se quiser que a IA complemente RFs comuns ao tipo de sistema. RFs sugeridos vem com origem prefixada por `sugestao IA:` para rastreabilidade.
+3. `Extrair requisitos com IA` -> revise/edite/adicione/remova RFs -> `Validar requisitos` (libera a Etapa 2).
+
+**Etapa 2 - Casos de uso**
+
+4. `Gerar casos de uso` -> revise a tabela editavel (ID, atores, nome, descricao, gatilho, pre-condicoes).
+   - `Salvar casos de uso` regenera CSV/MD/SVG/PlantUML/relatorio com base nas suas edicoes.
+   - `Adicionar caso de uso` cria linha em branco.
+   - `Remover` exclui um UC; relacoes que perdem origem ou destino sao descartadas automaticamente.
+5. `Validar casos de uso` (libera a Etapa 3). Editar depois reverte para pendente.
+
+**Etapa 3 - User Stories**
+
+6. `OK, gerar User Stories com IA` -> a IA produz uma user story por UC com 2 a 4 criterios em estilo Gherkin.
+7. `Baixar PDF completo` na lateral direita gera o PDF com tudo em sequencia.
+
+A qualquer momento, `Resetar pipeline` (canto superior direito) zera tudo.
+
+## 8) Onde ficam as saidas
+
+Dentro da pasta do projeto:
+
+```text
+outputs/web_gui/
+├── relatorio_completo.pdf
+├── requisitos_funcionais.{json,md}
+├── user_stories.{json,md}
+├── tabela_casos_de_uso.md
+├── casos_de_uso.csv
+├── relatorio_casos_de_uso.txt
+├── diagrama_casos_de_uso.svg
+└── diagrama_casos_de_uso.puml
+```
+
+## 9) Encerrar quando terminar
+
+```bash
+docker compose down
+```
+
+Para reabrir depois sem reconstruir:
+
+```bash
+docker compose up -d
+```
+
+---
+
+## Problemas comuns
+
+| Sintoma | Causa | Solucao |
+|---|---|---|
+| `Cannot connect to the Docker daemon` | Docker Desktop fechado | Abra o Docker Desktop e espere ficar "running" |
+| `port is already allocated` (8765) | Algo ja usa a porta | Edite `docker-compose.yml`, troque `"8765:8765"` por `"9000:8765"` e acesse `localhost:9000` |
+| `Erro ao extrair requisitos com IA: 401` | Chave invalida ou sem saldo | Confira `.env` e o saldo em [platform.openai.com/usage](https://platform.openai.com/usage) |
+| Pagina em branco ou "este site nao pode ser acessado" | Container ainda subindo | Aguarde 10 a 30s e de F5 |
+| Windows: `cp` nao reconhecido | PowerShell usa outro comando | Use `Copy-Item .env.example .env` |
+| Mac M1/M2/M3 lento na 1a build | Docker Desktop em emulacao | Garanta que esta usando Docker Desktop **for Apple Silicon** |
+| `env file ... .env not found` em Docker antigo | Compose < 2.24 nao entende `required: false` | Atualize o Docker Desktop ou rode `cp .env.example .env` antes |
+
+---
+
+# Modo alternativo - rodar com Python local (sem Docker)
+
+So necessario se voce nao quer instalar Docker.
 
 ## Configurar chave da API
 
@@ -25,143 +201,63 @@ OPENAI_API_KEY=sua_chave_aqui
 OPENAI_MODEL=gpt-5.2
 ```
 
-Instale as dependencias (recomendado em um virtualenv local, pois o Python do Homebrew nao permite `pip install` global):
+Instale as dependencias em um virtualenv local (em macOS o Python do Homebrew nao permite `pip install` global):
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Em seguida, sempre rode os comandos com o venv ativo (ou usando `.venv/bin/python` diretamente).
+Em seguida sempre rode com o venv ativo (ou usando `.venv/bin/python` diretamente).
 
 As dependencias incluem `python-dotenv`, `reportlab` e `svglib`. As duas ultimas habilitam a geracao do PDF; se elas faltarem, o restante da aplicacao continua funcionando.
-
-## Executar com exemplo
-
-```bash
-python3 main.py --file examples/entrada.txt --out outputs
-```
 
 ## Abrir interface grafica web local
 
 ```bash
-python3 gui.py
+python gui.py
 ```
 
 Tambem e possivel abrir pela entrada principal:
 
 ```bash
-python3 main.py --gui
+python main.py --gui
 ```
-
-Na interface, o fluxo tem **3 gates de validacao** que voce controla, alternando entre IA e revisao humana:
-
-**Etapa 1 - Requisitos funcionais**
-
-1. Digite a descricao livre do sistema (ex.: "totem do McDonalds").
-2. (Opcional) Marque `Sugerir requisitos adicionais com IA` se quiser que a IA complemente RFs comuns ao tipo de sistema. RFs sugeridos vem com origem prefixada por `sugestao IA:` para rastreabilidade.
-3. Clique em `Extrair requisitos com IA`.
-4. Revise os RFs:
-   - edite qualquer campo livremente;
-   - `Adicionar requisito` cria uma linha em branco com proximo `RFNNN`;
-   - `Remover` em qualquer linha exclui o RF correspondente.
-5. Clique em `Validar requisitos` para fechar a etapa 1. Isso libera o botao `Gerar casos de uso`.
-
-**Etapa 2 - Casos de uso**
-
-6. Clique em `Gerar casos de uso` (so funciona se a etapa 1 estiver validada).
-7. Revise os UCs na **tabela editavel**: `ID`, `Atores` (nomes separados por virgula), `Nome`, `Descricao`, `Gatilho` e `Pre-condicoes` (uma por linha) podem ser ajustados in loco.
-   - `Salvar casos de uso` persiste suas edicoes e regenera diagrama, CSV, Markdown, PlantUML e relatorio textual a partir da nova lista.
-   - `Adicionar caso de uso` cria uma linha em branco com proximo `UCNNN`.
-   - `Remover` em qualquer linha exclui o UC; relacoes `<<include>>`/`<<extend>>` que perdem origem ou destino sao descartadas automaticamente.
-8. Clique em `Validar casos de uso` (ou `Revalidar` se ja validado) para fechar a etapa 2 e liberar o botao `Gerar User Stories com IA`. Qualquer edicao apos a validacao volta a etapa para o estado pendente.
-
-**Etapa 3 - User Stories**
-
-9. Clique em `OK, gerar User Stories com IA` (so funciona se a etapa 2 estiver validada). A IA produz uma user story por caso de uso, com 2 a 4 criterios de aceitacao em estilo Gherkin.
-10. Clique em `Baixar PDF completo` para receber tudo em um unico arquivo.
-
-A qualquer momento o botao `Baixar PDF com estado atual` (no canto da tabela de RFs) tambem gera o PDF do que ja foi produzido.
-
-No cabecalho ha tambem o botao **`Resetar pipeline`**: apos confirmacao, ele zera o texto de descricao, RFs, UCs, user stories e ambas as flags de validacao, devolvendo a sessao a um estado limpo (uma nova analise pode comecar do zero). E util quando se troca completamente o sistema sob analise.
 
 Por padrao, `gui.py` abre uma interface web local para evitar problemas de Tkinter no macOS/Homebrew.
 
-## Fluxo por terminal com IA
+## Fluxo por terminal com IA (sem GUI)
 
 Extrair requisitos funcionais:
 
 ```bash
-python3 main.py --extract-requirements --file examples/entrada.txt --out outputs
+python main.py --extract-requirements --file examples/entrada.txt --out outputs
 ```
 
 Gerar casos de uso a partir dos requisitos aprovados:
 
 ```bash
-python3 main.py --requirements-file outputs/requisitos_funcionais.json --out outputs
+python main.py --requirements-file outputs/requisitos_funcionais.json --out outputs
 ```
 
 ## Executar com texto direto
 
 ```bash
-python3 main.py --text "O cliente pode consultar pedidos. Para consultar pedidos, o cliente deve realizar login."
+python main.py --text "O cliente pode consultar pedidos. Para consultar pedidos, o cliente deve realizar login."
 ```
 
 Tambem aceita comandos curtos sem ator explicito. Nesses casos, o ator padrao sera `Usuario`:
 
 ```bash
-python3 main.py --text "criar novos pedidos"
+python main.py --text "criar novos pedidos"
 ```
 
-Outros exemplos aceitos:
+---
 
-```text
-Eu quero criar novos pedidos.
-O sistema deve permitir criar novos pedidos.
-Funcionalidades: cadastro de clientes, consulta de pedidos e emissão de relatórios.
-```
+# Detalhes tecnicos
 
-## Arquivos gerados
-
-```text
-outputs/tabela_casos_de_uso.md
-outputs/casos_de_uso.csv
-outputs/relatorio_casos_de_uso.txt
-outputs/diagrama_casos_de_uso.svg
-outputs/diagrama_casos_de_uso.puml
-outputs/relatorio_completo.pdf
-```
-
-Na interface web, ha tambem o botao **Baixar PDF completo** (no painel direito) e **Baixar PDF com estado atual** (junto da tabela de RFs editavel) para baixar o PDF a qualquer momento, sem precisar finalizar todo o pipeline.
-
-## Rodar com Docker
-
-Tres arquivos prontos:
-
-- `Dockerfile` (Python 3.12-slim, dependencias instaladas no build, porta 8765 exposta).
-- `docker-compose.yml` (servico `app` com `env_file` opcional para `.env`, volume `./outputs:/app/outputs`).
-- `.dockerignore` (mantem `.venv`, `outputs`, `.env` e arquivos de IDE fora da imagem).
-
-Pre-requisito: Docker Desktop ou Docker Engine com daemon ativo.
-
-Copie `.env.example` para `.env` e preencha `OPENAI_API_KEY` antes de usar **Extrair requisitos com IA** ou **User Stories** (sem chave valida a pagina sobe, mas essas etapas falham).
-
-Para conferir se o Docker da sua maquina consegue montar a imagem do zero (sem cache):
-
-```bash
-sh scripts/verify-docker.sh
-```
-
-```bash
-docker compose up --build -d
-```
-
-A interface fica em `http://localhost:8765`. Os artefatos gerados ficam disponiveis em `./outputs/web_gui/` na maquina hospedeira (volume montado), incluindo o PDF.
-
-Para ver logs: `docker compose logs -f app`. Para encerrar: `docker compose down`.
-
-Variaveis de ambiente reconhecidas pelo container (ja setadas no `docker-compose.yml`):
+## Variaveis de ambiente reconhecidas pelo container
 
 | Variavel | Default | Funcao |
 |---|---|---|
@@ -171,12 +267,20 @@ Variaveis de ambiente reconhecidas pelo container (ja setadas no `docker-compose
 | `GUI_OUTPUT_DIR` | `/app/outputs/web_gui` | Onde os artefatos sao gerados; mapeado para `./outputs/web_gui` via volume. |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | (do `.env`) | Configuracao da API OpenAI. |
 
-## Testes
+## Verificar se o Docker da sua maquina constroi a imagem do zero
 
 ```bash
-python3 -m unittest discover -s tests
+sh scripts/verify-docker.sh
+```
+
+(Util para diagnosticar problemas de build sem cache.)
+
+## Testes automatizados
+
+```bash
+python -m unittest discover -s tests
 ```
 
 ## Observacao metodologica
 
-A IA e usada para a etapa semantica de extracao de requisitos funcionais. O programa mantem a parte controlada do processo: edicao/aprovacao dos RFs, geracao de casos de uso, diagramas, relatorios e rastreabilidade.
+A IA e usada nas pontas que dependem de interpretacao de linguagem natural (extracao de RFs, geracao de user stories). O programa mantem a parte deterministica e auditavel: edicao/aprovacao dos RFs, geracao de casos de uso, diagramas, relatorios e rastreabilidade entre texto -> RF -> UC -> user story.
