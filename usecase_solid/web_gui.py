@@ -16,11 +16,14 @@ from usecase_solid.ai import OpenAIRequirementsExtractor, OpenAIUserStoriesExtra
 from usecase_solid.application import UseCaseAnalysisResult
 from usecase_solid.bootstrap import build_analysis_service
 from usecase_solid.domain import FunctionalRequirement, UserStory
+from usecase_solid.domain.models import Actor, UseCase, UseCaseDocument
 from usecase_solid.domain.requirements import requirements_from_dicts
 from usecase_solid.output_writer import write_analysis_outputs, write_pdf_report, write_requirements_outputs
+from usecase_solid.text_utils import slugify
 
 
 _RF_ID_PATTERN = re.compile(r"^RF(\d+)$", re.IGNORECASE)
+_UC_ID_PATTERN = re.compile(r"^UC(\d+)$", re.IGNORECASE)
 
 
 class WebGuiState:
@@ -76,6 +79,50 @@ class WebGuiState:
         if self.last_result is None:
             return
         self.use_cases_validated = True
+
+    def update_use_cases(
+        self, updated: List[UseCase]
+    ) -> tuple[UseCaseAnalysisResult, Dict[str, Path]]:
+        document = self._build_document_from_use_cases(updated)
+        result = self.service._build_result(document)
+        paths = write_analysis_outputs(
+            result,
+            self.output_dir,
+            input_text=self.last_input_text,
+            requirements=self.last_requirements,
+        )
+        self.last_result = result
+        self.use_cases_validated = False
+        self.last_user_stories = []
+        return result, paths
+
+    def _build_document_from_use_cases(self, updated: List[UseCase]) -> UseCaseDocument:
+        previous = self.last_result.document if self.last_result is not None else None
+        document = UseCaseDocument()
+        document.use_cases = list(updated)
+
+        referenced_actor_ids: set[str] = set()
+        for uc in updated:
+            referenced_actor_ids.update(uc.actor_ids)
+
+        if previous is not None:
+            for actor_id, actor in previous.actors.items():
+                if actor_id in referenced_actor_ids:
+                    document.actors[actor_id] = actor
+        for actor_id in referenced_actor_ids:
+            if actor_id not in document.actors:
+                fallback_name = actor_id.replace("_", " ").strip().title() or actor_id
+                document.actors[actor_id] = Actor(id=actor_id, name=fallback_name)
+
+        valid_uc_ids = {uc.id for uc in updated}
+        if previous is not None:
+            for relationship in previous.relationships:
+                if (
+                    relationship.source_id in valid_uc_ids
+                    and relationship.target_id in valid_uc_ids
+                ):
+                    document.relationships.append(relationship)
+        return document
 
     def generate_user_stories(self) -> List[UserStory]:
         if self.last_result is None:
@@ -222,7 +269,16 @@ def _build_handler(state: WebGuiState) -> type[BaseHTTPRequestHandler]:
                 self._validate_requirements(description, fields, suggest_extras)
                 return
             if parsed.path == "/validate-use-cases":
-                self._validate_use_cases(description, suggest_extras)
+                self._validate_use_cases(description, fields, suggest_extras)
+                return
+            if parsed.path == "/save-use-cases":
+                self._save_use_cases(description, fields, suggest_extras)
+                return
+            if parsed.path == "/add-use-case":
+                self._add_use_case(description, fields, suggest_extras)
+                return
+            if parsed.path == "/remove-use-case":
+                self._remove_use_case(description, fields, suggest_extras)
                 return
             if parsed.path == "/generate-user-stories":
                 self._generate_user_stories(description, suggest_extras)
@@ -340,7 +396,9 @@ def _build_handler(state: WebGuiState) -> type[BaseHTTPRequestHandler]:
                 )
             )
 
-        def _validate_use_cases(self, description: str, suggest_extras: bool) -> None:
+        def _validate_use_cases(
+            self, description: str, fields: Dict[str, List[str]], suggest_extras: bool
+        ) -> None:
             if state.last_result is None:
                 self._send_html(
                     _render_page(
@@ -348,6 +406,19 @@ def _build_handler(state: WebGuiState) -> type[BaseHTTPRequestHandler]:
                         suggest_extras=suggest_extras,
                         requirements=state.last_requirements,
                         error="Gere os casos de uso antes de valida-los.",
+                    )
+                )
+                return
+            try:
+                self._persist_inline_use_cases(fields)
+            except Exception as exc:
+                self._send_html(
+                    _render_page(
+                        description,
+                        suggest_extras=suggest_extras,
+                        requirements=state.last_requirements,
+                        result=state.last_result,
+                        error=f"Erro ao salvar edicoes dos casos de uso: {exc}",
                     )
                 )
                 return
@@ -364,6 +435,118 @@ def _build_handler(state: WebGuiState) -> type[BaseHTTPRequestHandler]:
                     ),
                 )
             )
+
+        def _save_use_cases(
+            self, description: str, fields: Dict[str, List[str]], suggest_extras: bool
+        ) -> None:
+            if state.last_result is None:
+                self._send_html(
+                    _render_page(
+                        description,
+                        suggest_extras=suggest_extras,
+                        requirements=state.last_requirements,
+                        error="Gere os casos de uso antes de salvar edicoes.",
+                    )
+                )
+                return
+            try:
+                self._persist_inline_use_cases(fields)
+            except Exception as exc:
+                self._send_html(
+                    _render_page(
+                        description,
+                        suggest_extras=suggest_extras,
+                        requirements=state.last_requirements,
+                        result=state.last_result,
+                        error=f"Erro ao salvar edicoes dos casos de uso: {exc}",
+                    )
+                )
+                return
+            ucs = state.last_result.document.use_cases if state.last_result else []
+            self._send_html(
+                _render_page(
+                    description,
+                    suggest_extras=suggest_extras,
+                    requirements=state.last_requirements,
+                    result=state.last_result,
+                    status=(
+                        f"{len(ucs)} caso(s) de uso atualizado(s). Clique em 'Validar casos de uso' "
+                        "para liberar a Etapa 3."
+                    ),
+                )
+            )
+
+        def _add_use_case(
+            self, description: str, fields: Dict[str, List[str]], suggest_extras: bool
+        ) -> None:
+            current = _use_cases_from_form(fields)
+            current.append(_make_blank_use_case(current))
+            try:
+                state.update_use_cases(current)
+            except Exception as exc:
+                self._send_html(
+                    _render_page(
+                        description,
+                        suggest_extras=suggest_extras,
+                        requirements=state.last_requirements,
+                        result=state.last_result,
+                        error=f"Erro ao adicionar caso de uso: {exc}",
+                    )
+                )
+                return
+            self._send_html(
+                _render_page(
+                    description,
+                    suggest_extras=suggest_extras,
+                    requirements=state.last_requirements,
+                    result=state.last_result,
+                    status="Caso de uso em branco adicionado. Preencha os campos e clique em 'Salvar casos de uso'.",
+                )
+            )
+
+        def _remove_use_case(
+            self, description: str, fields: Dict[str, List[str]], suggest_extras: bool
+        ) -> None:
+            current = _use_cases_from_form(fields)
+            try:
+                index = int(fields.get("remove_uc_index", ["-1"])[0])
+            except ValueError:
+                index = -1
+            if 0 <= index < len(current):
+                removed = current.pop(index)
+                status = f"Caso de uso {removed.id or '(sem id)'} removido."
+            else:
+                status = "Indice invalido para remocao do caso de uso."
+            try:
+                state.update_use_cases(current)
+            except Exception as exc:
+                self._send_html(
+                    _render_page(
+                        description,
+                        suggest_extras=suggest_extras,
+                        requirements=state.last_requirements,
+                        result=state.last_result,
+                        error=f"Erro ao remover caso de uso: {exc}",
+                    )
+                )
+                return
+            self._send_html(
+                _render_page(
+                    description,
+                    suggest_extras=suggest_extras,
+                    requirements=state.last_requirements,
+                    result=state.last_result,
+                    status=status,
+                )
+            )
+
+        def _persist_inline_use_cases(self, fields: Dict[str, List[str]]) -> None:
+            if "uc_id" not in fields:
+                return
+            updated = _use_cases_from_form(fields)
+            current = state.last_result.document.use_cases if state.last_result else []
+            if not _use_cases_match(updated, current):
+                state.update_use_cases(updated)
 
         def _generate_user_stories(self, description: str, suggest_extras: bool) -> None:
             try:
@@ -665,6 +848,83 @@ def _make_blank_requirement(current: List[FunctionalRequirement]) -> FunctionalR
     )
 
 
+def _use_cases_from_form(fields: Dict[str, List[str]]) -> List[UseCase]:
+    use_cases: List[UseCase] = []
+    ids = fields.get("uc_id", [])
+    for index in range(len(ids)):
+        raw_id = _field_at(fields, "uc_id", index)
+        raw_name = _field_at(fields, "uc_name", index)
+        raw_actors = _field_at(fields, "uc_actors", index)
+        raw_description = _field_at(fields, "uc_description", index)
+        raw_trigger = _field_at(fields, "uc_trigger", index)
+        raw_preconditions = _field_at(fields, "uc_preconditions", index)
+        raw_sources = _field_at(fields, "uc_sources", index)
+
+        if not raw_id and not raw_name and not raw_actors and not raw_description:
+            continue
+
+        actor_ids = []
+        for piece in re.split(r"[,;\n]+", raw_actors):
+            name = piece.strip()
+            if not name:
+                continue
+            actor_ids.append(slugify(name) or name.lower())
+        seen: set[str] = set()
+        actor_ids = [aid for aid in actor_ids if not (aid in seen or seen.add(aid))]
+
+        preconditions = [
+            line.strip() for line in raw_preconditions.splitlines() if line.strip()
+        ]
+        source_sentences = [
+            line.strip() for line in raw_sources.splitlines() if line.strip()
+        ]
+
+        use_case = UseCase(
+            id=raw_id or f"UC{index + 1:03d}",
+            name=raw_name,
+            actor_ids=actor_ids,
+            description=raw_description,
+            trigger=raw_trigger,
+            preconditions=preconditions,
+            source_sentences=source_sentences,
+        )
+        use_cases.append(use_case)
+    return use_cases
+
+
+def _make_blank_use_case(current: List[UseCase]) -> UseCase:
+    next_number = 1
+    for uc in current:
+        match = _UC_ID_PATTERN.match(uc.id or "")
+        if match:
+            next_number = max(next_number, int(match.group(1)) + 1)
+    return UseCase(
+        id=f"UC{next_number:03d}",
+        name="",
+        actor_ids=[],
+        description="",
+        trigger="",
+        preconditions=[],
+        source_sentences=[],
+    )
+
+
+def _use_cases_match(a: List[UseCase], b: List[UseCase]) -> bool:
+    if len(a) != len(b):
+        return False
+    for left, right in zip(a, b):
+        if (
+            left.id != right.id
+            or left.name.strip() != right.name.strip()
+            or list(left.actor_ids) != list(right.actor_ids)
+            or left.description.strip() != right.description.strip()
+            or left.trigger.strip() != right.trigger.strip()
+            or list(left.preconditions) != list(right.preconditions)
+        ):
+            return False
+    return True
+
+
 def _render_page_impl(
     description: str,
     requirements: Optional[List[FunctionalRequirement]] = None,
@@ -855,6 +1115,12 @@ def _render_page_impl(
       width: 100%;
       border-collapse: collapse;
       font-size: 13px;
+    }}
+    .table-scroll {{
+      overflow-x: auto;
+    }}
+    .muted {{
+      color: var(--muted);
     }}
     th, td {{
       border: 1px solid var(--border);
@@ -1086,43 +1352,128 @@ def _render_use_cases_section(
     has_uc: bool,
     use_cases_validated: bool,
 ) -> str:
-    table = result.markdown_table if result else ""
-    suggest_hidden = '<input type="hidden" name="suggest_extras" value="on">' if suggest_extras else ""
-    if not has_uc:
+    if not has_uc or result is None:
         return """
       <details>
         <summary>Casos de uso (etapa 2)</summary>
         <pre>Os casos de uso aparecerao aqui apos clicar em <strong>Gerar casos de uso</strong>.</pre>
       </details>
 """
+
+    document = result.document
+    suggest_hidden = '<input type="hidden" name="suggest_extras" value="on">' if suggest_extras else ""
+    rows: List[str] = []
+    for index, uc in enumerate(document.use_cases):
+        actor_names = ", ".join(
+            html.escape(document.actors[aid].name) if aid in document.actors else html.escape(aid)
+            for aid in uc.actor_ids
+        )
+        preconditions_text = "\n".join(uc.preconditions)
+        related = _related_relationships_label(document, uc.id)
+        rows.append(
+            f"""
+              <tr>
+                <td><input name="uc_id" value="{html.escape(uc.id)}"></td>
+                <td><input name="uc_actors" value="{actor_names}"
+                       placeholder="Cliente, Atendente"></td>
+                <td><input name="uc_name" value="{html.escape(uc.name)}"></td>
+                <td><textarea class="req-description" name="uc_description">{html.escape(uc.description)}</textarea></td>
+                <td><input name="uc_trigger" value="{html.escape(uc.trigger)}"></td>
+                <td><textarea class="req-description" name="uc_preconditions"
+                              placeholder="Uma pre-condicao por linha">{html.escape(preconditions_text)}</textarea></td>
+                <td>{related}</td>
+                <td class="row-actions">
+                  <button class="danger" type="submit" formaction="/remove-use-case"
+                          formnovalidate name="remove_uc_index" value="{index}">Remover</button>
+                </td>
+              </tr>
+"""
+        )
+
+    if not rows:
+        rows.append(
+            """
+              <tr>
+                <td colspan="8" class="empty-row">
+                  Nenhum caso de uso. Clique em <em>Adicionar caso de uso</em>
+                  para comecar manualmente.
+                </td>
+              </tr>
+"""
+        )
+
     if use_cases_validated:
-        validation_block = (
-            '<div class="step-status ok">Etapa 2 OK: casos de uso validados.</div>'
-            f'<form method="post" action="/validate-use-cases">'
-            f'<input type="hidden" name="description" value="{html.escape(description)}">'
-            f"{suggest_hidden}"
-            '<button class="success" type="submit" formnovalidate '
-            'title="Casos de uso validados. Clique para revalidar.">Revalidar &check;</button>'
-            "</form>"
+        step_status = '<div class="step-status ok">Etapa 2 OK: casos de uso validados.</div>'
+        validate_button = (
+            '<button class="success" type="submit" formaction="/validate-use-cases" '
+            'formnovalidate title="Casos de uso validados. Clique para revalidar com edicoes.">'
+            "Revalidar casos de uso &check;</button>"
         )
     else:
-        validation_block = (
-            '<div class="step-status">Etapa 2 pendente: revise os casos de uso e valide para liberar a geracao de User Stories.</div>'
-            f'<form method="post" action="/validate-use-cases">'
-            f'<input type="hidden" name="description" value="{html.escape(description)}">'
-            f"{suggest_hidden}"
-            '<button class="primary" type="submit" formnovalidate>Validar casos de uso</button>'
-            "</form>"
+        step_status = (
+            '<div class="step-status">Etapa 2 pendente: revise os casos de uso e clique '
+            "em <strong>Validar casos de uso</strong> para liberar a Etapa 3.</div>"
         )
+        validate_button = (
+            '<button class="primary" type="submit" formaction="/validate-use-cases" '
+            'formnovalidate>Validar casos de uso</button>'
+        )
+
     return f"""
       <details open>
-        <summary>Casos de uso (etapa 2)</summary>
-        <pre>{html.escape(table)}</pre>
-        <div class="section-actions">
-          {validation_block}
-        </div>
+        <summary>Casos de uso (etapa 2) - editaveis</summary>
+        <form method="post" action="/save-use-cases">
+          <input type="hidden" name="description" value="{html.escape(description)}">
+          {suggest_hidden}
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Atores</th>
+                  <th>Nome</th>
+                  <th>Descricao</th>
+                  <th>Gatilho</th>
+                  <th>Pre-condicoes</th>
+                  <th>Relacoes</th>
+                  <th>Acoes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {''.join(rows)}
+              </tbody>
+            </table>
+          </div>
+          <div class="form-actions">
+            <button type="submit">Salvar casos de uso</button>
+            <button class="secondary" type="submit" formaction="/add-use-case"
+                    formnovalidate>Adicionar caso de uso</button>
+            {validate_button}
+          </div>
+          {step_status}
+        </form>
       </details>
 """
+
+
+def _related_relationships_label(document: UseCaseDocument, uc_id: str) -> str:
+    parts: List[str] = []
+    for relationship in document.relationships:
+        if relationship.source_id == uc_id:
+            target = next(
+                (uc.name for uc in document.use_cases if uc.id == relationship.target_id),
+                relationship.target_id,
+            )
+            parts.append(html.escape(f"{relationship.label} -> {target}"))
+        elif relationship.target_id == uc_id:
+            source = next(
+                (uc.name for uc in document.use_cases if uc.id == relationship.source_id),
+                relationship.source_id,
+            )
+            parts.append(html.escape(f"{source} {relationship.label} ->"))
+    if not parts:
+        return '<span class="muted">-</span>'
+    return "<br>".join(parts)
 
 
 def _render_user_stories_section(
