@@ -93,6 +93,25 @@ class WebGuiUseCaseEditingTest(unittest.TestCase):
         self.assertEqual(ucs[1].actor_ids, ["atendente"])
         self.assertEqual(ucs[1].preconditions, ["Pedido aberto"])
 
+    def test_reset_pipeline_clears_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state = _seed_state_with_use_cases(Path(tmp))
+            state.use_cases_validated = True
+            state.last_user_stories = []  # explicit
+
+            self.assertTrue(state.last_input_text)
+            self.assertTrue(state.last_requirements)
+            self.assertIsNotNone(state.last_result)
+
+            state.reset_pipeline()
+
+            self.assertEqual(state.last_input_text, "")
+            self.assertEqual(state.last_requirements, [])
+            self.assertIsNone(state.last_result)
+            self.assertEqual(state.last_user_stories, [])
+            self.assertFalse(state.requirements_validated)
+            self.assertFalse(state.use_cases_validated)
+
     def test_use_cases_match_detects_changes(self) -> None:
         original = [
             UseCase(id="UC001", name="A", actor_ids=["x"]),

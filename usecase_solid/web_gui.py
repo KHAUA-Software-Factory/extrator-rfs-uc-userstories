@@ -133,6 +133,14 @@ class WebGuiState:
         self.last_user_stories = list(stories)
         return stories
 
+    def reset_pipeline(self) -> None:
+        self.last_input_text = ""
+        self.last_requirements = []
+        self.last_result = None
+        self.last_user_stories = []
+        self.requirements_validated = False
+        self.use_cases_validated = False
+
     def process_directly(self, text: str) -> tuple[UseCaseAnalysisResult, Dict[str, Path]]:
         result = self.service.execute(text)
         paths = write_analysis_outputs(result, self.output_dir, input_text=text)
@@ -285,6 +293,9 @@ def _build_handler(state: WebGuiState) -> type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/download-pdf":
                 self._download_pdf_from_form(description, fields, suggest_extras)
+                return
+            if parsed.path == "/reset":
+                self._reset_pipeline()
                 return
             self.send_error(404, "Pagina nao encontrada")
 
@@ -605,6 +616,15 @@ def _build_handler(state: WebGuiState) -> type[BaseHTTPRequestHandler]:
                     suggest_extras=suggest_extras,
                     requirements=current,
                     status=status,
+                )
+            )
+
+        def _reset_pipeline(self) -> None:
+            state.reset_pipeline()
+            self._send_html(
+                _render_page(
+                    state.example_text,
+                    status="Pipeline resetado. Cole uma nova descricao para comecar.",
                 )
             )
 
@@ -974,10 +994,22 @@ def _render_page_impl(
       padding: 18px 24px;
       border-bottom: 1px solid var(--border);
       background: var(--panel);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
     }}
     h1 {{
       margin: 0;
       font-size: 22px;
+    }}
+    .reset-form button {{
+      margin-top: 0;
+      background: #b91c1c;
+    }}
+    .reset-form button:hover {{
+      background: #9a1818;
     }}
     main {{
       display: grid;
@@ -1187,6 +1219,12 @@ def _render_page_impl(
 <body>
   <header>
     <h1>Extrator de Requisitos Funcionais e Casos de Uso</h1>
+    <form class="reset-form" method="post" action="/reset"
+          onsubmit="return confirm('Resetar o pipeline? Texto, requisitos, casos de uso e user stories serao limpos.');">
+      <button type="submit" title="Limpa descricao, requisitos, casos de uso e user stories.">
+        Resetar pipeline
+      </button>
+    </form>
   </header>
   <main>
     <section>
