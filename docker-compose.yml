@@ -6,8 +6,11 @@ services:
     restart: unless-stopped
     ports:
       - "8765:8765"
+    # Compose v2.24+: permite `docker compose build` sem copiar .env primeiro.
+    # Sem OPENAI_API_KEY valida a interface sobe, mas a extracao com IA falha ate criar o .env.
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       GUI_HOST: 0.0.0.0
       GUI_PORT: 8765

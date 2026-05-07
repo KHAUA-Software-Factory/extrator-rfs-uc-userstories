@@ -140,10 +140,18 @@ Na interface web, ha tambem o botao **Baixar PDF completo** (no painel direito) 
 Tres arquivos prontos:
 
 - `Dockerfile` (Python 3.12-slim, dependencias instaladas no build, porta 8765 exposta).
-- `docker-compose.yml` (servico `app` com `env_file: .env`, volume `./outputs:/app/outputs`).
+- `docker-compose.yml` (servico `app` com `env_file` opcional para `.env`, volume `./outputs:/app/outputs`).
 - `.dockerignore` (mantem `.venv`, `outputs`, `.env` e arquivos de IDE fora da imagem).
 
-Pre-requisito: Docker Desktop ou Docker Engine com daemon ativo. Crie o `.env` antes (ver secao "Configurar chave da API").
+Pre-requisito: Docker Desktop ou Docker Engine com daemon ativo.
+
+Copie `.env.example` para `.env` e preencha `OPENAI_API_KEY` antes de usar **Extrair requisitos com IA** ou **User Stories** (sem chave valida a pagina sobe, mas essas etapas falham).
+
+Para conferir se o Docker da sua maquina consegue montar a imagem do zero (sem cache):
+
+```bash
+sh scripts/verify-docker.sh
+```
 
 ```bash
 docker compose up --build -d
