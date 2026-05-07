@@ -1,77 +1,389 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_0237cc1" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.46.1" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.9.0">
-  <bpmn:collaboration id="Collaboration_03aal42">
-    <bpmn:participant id="Participant_0zwmnwq" processRef="Process_1079a5j" />
-    <bpmn:group id="Group_1myji80" />
-    <bpmn:textAnnotation id="TextAnnotation_1vmdo5t">
-      <bpmn:text>teste</bpmn:text>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_PlataformaRF" targetNamespace="http://mestrado.exu/plataforma-requisitos" exporter="Camunda Modeler" exporterVersion="5.46.1" modeler:executionPlatform="Camunda Platform" modeler:executionPlatformVersion="7.21.0">
+  <bpmn:collaboration id="Collaboration_PlataformaRF">
+    <bpmn:participant id="Participant_Plataforma" name="Plataforma de Engenharia de Requisitos com Apoio de IA" processRef="Process_PlataformaRF" />
+    <bpmn:textAnnotation id="TextAn_Legenda">
+      <bpmn:text>Artefatos de entrada: descricao em linguagem natural (PT-BR). Opcional: flag &#34;sugerir requisitos adicionais com IA&#34;.</bpmn:text>
     </bpmn:textAnnotation>
-    <bpmn:association id="Association_0s6atx7" associationDirection="None" sourceRef="Event_0wykw5r" targetRef="TextAnnotation_1vmdo5t" />
+    <bpmn:textAnnotation id="TextAn_ArtefatosRF">
+      <bpmn:text>Saida fase RF: requisitos_funcionais.json, requisitos_funcionais.md</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:textAnnotation id="TextAn_ArtefatosUC">
+      <bpmn:text>Saida fase UC: tabela_casos_de_uso.md, casos_de_uso.csv, relatorio_casos_de_uso.txt, diagrama_casos_de_uso.svg, diagrama_casos_de_uso.puml, relatorio_completo.pdf (parcial)</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:textAnnotation id="TextAn_ArtefatosUS">
+      <bpmn:text>Saida fase US: user_stories.json, user_stories.md; PDF final consolida todas as etapas.</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Assoc_Legenda_Start" associationDirection="None" sourceRef="StartEvent_Inicio" targetRef="TextAn_Legenda" />
+    <bpmn:association id="Assoc_RF_IA" associationDirection="None" sourceRef="Activity_ExtrairRFsIA" targetRef="TextAn_ArtefatosRF" />
+    <bpmn:association id="Assoc_UC_Export" associationDirection="None" sourceRef="Activity_GerarArtefatosUC" targetRef="TextAn_ArtefatosUC" />
+    <bpmn:association id="Assoc_US_Final" associationDirection="None" sourceRef="Activity_ExportarConsolidado" targetRef="TextAn_ArtefatosUS" />
+    <bpmn:association id="Assoc_DO_Texto" associationDirection="None" sourceRef="Activity_InformarDescricao" targetRef="DataObjectRef_Texto" />
+    <bpmn:association id="Assoc_DO_RFJson" associationDirection="None" sourceRef="Activity_ExtrairRFsIA" targetRef="DataObjectRef_RFJson" />
+    <bpmn:association id="Assoc_DO_RFmd" associationDirection="None" sourceRef="Activity_ExtrairRFsIA" targetRef="DataObjectRef_RFmd" />
+    <bpmn:association id="Assoc_DO_UC" associationDirection="None" sourceRef="Activity_GerarArtefatosUC" targetRef="DataObjectRef_UCPack" />
+    <bpmn:association id="Assoc_DO_US" associationDirection="None" sourceRef="Activity_GerarUserStoriesIA" targetRef="DataObjectRef_USPack" />
+    <bpmn:association id="Assoc_DO_PDF" associationDirection="None" sourceRef="Activity_ExportarConsolidado" targetRef="DataObjectRef_PDF" />
+    <bpmn:textAnnotation id="TextAn_Reset">
+      <bpmn:text>Opcional a qualquer momento: acao &#34;Resetar pipeline&#34; na UI limpa estado e volta ao passo de informar descricao (nao modelado como sequencia apos o fim).</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Assoc_Reset" associationDirection="None" sourceRef="Activity_InformarDescricao" targetRef="TextAn_Reset" />
   </bpmn:collaboration>
-  <bpmn:process id="Process_1079a5j" isExecutable="true">
-    <bpmn:startEvent id="StartEvent_1" />
-    <bpmn:exclusiveGateway id="Gateway_09w5b6u">
-      <bpmn:outgoing>Flow_1ujsayw</bpmn:outgoing>
-      <bpmn:outgoing>Flow_1v82s9e</bpmn:outgoing>
+  <bpmn:process id="Process_PlataformaRF" isExecutable="true">
+    <bpmn:laneSet id="LaneSet_Principal">
+      <bpmn:lane id="Lane_Usuario" name="Usuario">
+        <bpmn:flowNodeRef>StartEvent_Inicio</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_InformarDescricao</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_EditarRFs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_RevisarUCs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_EditarUCs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_BaixarPDF</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Fim</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_IA_RF" name="Modulo de Extracao de Requisitos (IA)">
+        <bpmn:flowNodeRef>Activity_ExtrairRFsIA</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Validacao_RF" name="Modulo de Validacao de Requisitos">
+        <bpmn:flowNodeRef>Activity_ExibirTabelaRF</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_RF_Aprovados</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Gerador_UC" name="Gerador de Casos de Uso">
+        <bpmn:flowNodeRef>Activity_ConverterRFparaUC</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_DetectarRelacoesIncludeExtend</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Exportacao" name="Exportacao e Visualizacao">
+        <bpmn:flowNodeRef>Activity_GerarArtefatosUC</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_UC_Aprovados</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_ExportarConsolidado</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_IA_US" name="Sistema de IA para User Stories">
+        <bpmn:flowNodeRef>Activity_GerarUserStoriesIA</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:dataObject id="DataObject_TextoLivre" name="Descricao do sistema (texto livre, PT-BR)" />
+    <bpmn:dataObject id="DataObject_RF_JSON" name="requisitos_funcionais.json" />
+    <bpmn:dataObject id="DataObject_RF_MD" name="requisitos_funcionais.md" />
+    <bpmn:dataObject id="DataObject_UC_Pack" name="Pacote UC: tabela MD, CSV, relatorio TXT, SVG, PlantUML" />
+    <bpmn:dataObject id="DataObject_US_Pack" name="user_stories.json / user_stories.md" />
+    <bpmn:dataObject id="DataObject_PDF" name="relatorio_completo.pdf" />
+    <bpmn:dataObjectReference id="DataObjectRef_Texto" dataObjectRef="DataObject_TextoLivre" />
+    <bpmn:dataObjectReference id="DataObjectRef_RFJson" dataObjectRef="DataObject_RF_JSON" />
+    <bpmn:dataObjectReference id="DataObjectRef_RFmd" dataObjectRef="DataObject_RF_MD" />
+    <bpmn:dataObjectReference id="DataObjectRef_UCPack" dataObjectRef="DataObject_UC_Pack" />
+    <bpmn:dataObjectReference id="DataObjectRef_USPack" dataObjectRef="DataObject_US_Pack" />
+    <bpmn:dataObjectReference id="DataObjectRef_PDF" dataObjectRef="DataObject_PDF" />
+    <bpmn:startEvent id="StartEvent_Inicio" name="Inicio da analise">
+      <bpmn:outgoing>Flow_01</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Activity_InformarDescricao" name="Informar descricao livre e opcao &#34;sugerir extras IA&#34;">
+      <bpmn:incoming>Flow_01</bpmn:incoming>
+      <bpmn:outgoing>Flow_02</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="Activity_ExtrairRFsIA" name="Extrair RFs candidatos (OpenAI API)" implementation="##WebService">
+      <bpmn:incoming>Flow_02</bpmn:incoming>
+      <bpmn:outgoing>Flow_03</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="Activity_ExibirTabelaRF" name="Exibir tabela editavel de RFs (incluir / excluir / editar)">
+      <bpmn:incoming>Flow_03</bpmn:incoming>
+      <bpmn:incoming>Flow_LoopRF_Volta</bpmn:incoming>
+      <bpmn:outgoing>Flow_04</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_RF_Aprovados" name="RFs validados pelo usuario?">
+      <bpmn:incoming>Flow_04</bpmn:incoming>
+      <bpmn:outgoing>Flow_LoopRF</bpmn:outgoing>
+      <bpmn:outgoing>Flow_RF_OK</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:exclusiveGateway id="Gateway_1xbqg7t">
-      <bpmn:incoming>Flow_1ujsayw</bpmn:incoming>
-      <bpmn:outgoing>Flow_1vqrgbu</bpmn:outgoing>
+    <bpmn:userTask id="Activity_EditarRFs" name="Ajustar RFs e voltar a revisao">
+      <bpmn:incoming>Flow_LoopRF</bpmn:incoming>
+      <bpmn:outgoing>Flow_LoopRF_Volta</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="Activity_ConverterRFparaUC" name="Converter RFs aprovados em modelo de casos de uso">
+      <bpmn:incoming>Flow_RF_OK</bpmn:incoming>
+      <bpmn:outgoing>Flow_05</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Activity_DetectarRelacoesIncludeExtend" name="Detectar relacoes include e extend (UML)">
+      <bpmn:incoming>Flow_05</bpmn:incoming>
+      <bpmn:outgoing>Flow_06</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Activity_GerarArtefatosUC" name="Gerar tabela MD, CSV, relatorio, SVG, PlantUML e PDF parcial">
+      <bpmn:incoming>Flow_06</bpmn:incoming>
+      <bpmn:outgoing>Flow_07</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="Activity_RevisarUCs" name="Revisar UCs na tabela editavel (salvar / adicionar / remover)">
+      <bpmn:incoming>Flow_07</bpmn:incoming>
+      <bpmn:incoming>Flow_LoopUC_Volta</bpmn:incoming>
+      <bpmn:outgoing>Flow_08</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_UC_Aprovados" name="UCs validados pelo usuario?">
+      <bpmn:incoming>Flow_08</bpmn:incoming>
+      <bpmn:outgoing>Flow_LoopUC</bpmn:outgoing>
+      <bpmn:outgoing>Flow_UC_OK</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:task id="Activity_0mf7jpb">
-      <bpmn:incoming>Flow_1vqrgbu</bpmn:incoming>
-    </bpmn:task>
-    <bpmn:endEvent id="Event_0wykw5r">
-      <bpmn:incoming>Flow_1v82s9e</bpmn:incoming>
+    <bpmn:userTask id="Activity_EditarUCs" name="Editar UCs e salvar regeneracao">
+      <bpmn:incoming>Flow_LoopUC</bpmn:incoming>
+      <bpmn:outgoing>Flow_LoopUC_Volta</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="Activity_GerarUserStoriesIA" name="Gerar User Stories (Mike Cohn + criterios Gherkin)" implementation="##WebService">
+      <bpmn:incoming>Flow_UC_OK</bpmn:incoming>
+      <bpmn:outgoing>Flow_09</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Activity_ExportarConsolidado" name="Consolidar PDF completo e artefatos finais">
+      <bpmn:incoming>Flow_09</bpmn:incoming>
+      <bpmn:outgoing>Flow_10</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="Activity_BaixarPDF" name="Baixar PDF e revisar entregas">
+      <bpmn:incoming>Flow_10</bpmn:incoming>
+      <bpmn:outgoing>Flow_11</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:endEvent id="EndEvent_Fim" name="Fim: rastreabilidade texto para RF para UC para US">
+      <bpmn:incoming>Flow_11</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:sequenceFlow id="Flow_1ujsayw" sourceRef="Gateway_09w5b6u" targetRef="Gateway_1xbqg7t" />
-    <bpmn:sequenceFlow id="Flow_1v82s9e" sourceRef="Gateway_09w5b6u" targetRef="Event_0wykw5r" />
-    <bpmn:sequenceFlow id="Flow_1vqrgbu" sourceRef="Gateway_1xbqg7t" targetRef="Activity_0mf7jpb" />
+    <bpmn:sequenceFlow id="Flow_01" sourceRef="StartEvent_Inicio" targetRef="Activity_InformarDescricao" />
+    <bpmn:sequenceFlow id="Flow_02" sourceRef="Activity_InformarDescricao" targetRef="Activity_ExtrairRFsIA" />
+    <bpmn:sequenceFlow id="Flow_03" sourceRef="Activity_ExtrairRFsIA" targetRef="Activity_ExibirTabelaRF" />
+    <bpmn:sequenceFlow id="Flow_04" sourceRef="Activity_ExibirTabelaRF" targetRef="Gateway_RF_Aprovados" />
+    <bpmn:sequenceFlow id="Flow_LoopRF" name="Nao / revalidar" sourceRef="Gateway_RF_Aprovados" targetRef="Activity_EditarRFs" />
+    <bpmn:sequenceFlow id="Flow_LoopRF_Volta" sourceRef="Activity_EditarRFs" targetRef="Activity_ExibirTabelaRF" />
+    <bpmn:sequenceFlow id="Flow_RF_OK" name="Sim, validar RFs" sourceRef="Gateway_RF_Aprovados" targetRef="Activity_ConverterRFparaUC" />
+    <bpmn:sequenceFlow id="Flow_05" sourceRef="Activity_ConverterRFparaUC" targetRef="Activity_DetectarRelacoesIncludeExtend" />
+    <bpmn:sequenceFlow id="Flow_06" sourceRef="Activity_DetectarRelacoesIncludeExtend" targetRef="Activity_GerarArtefatosUC" />
+    <bpmn:sequenceFlow id="Flow_07" sourceRef="Activity_GerarArtefatosUC" targetRef="Activity_RevisarUCs" />
+    <bpmn:sequenceFlow id="Flow_08" sourceRef="Activity_RevisarUCs" targetRef="Gateway_UC_Aprovados" />
+    <bpmn:sequenceFlow id="Flow_LoopUC" name="Nao / revalidar" sourceRef="Gateway_UC_Aprovados" targetRef="Activity_EditarUCs" />
+    <bpmn:sequenceFlow id="Flow_LoopUC_Volta" sourceRef="Activity_EditarUCs" targetRef="Activity_RevisarUCs" />
+    <bpmn:sequenceFlow id="Flow_UC_OK" name="Sim, validar UCs" sourceRef="Gateway_UC_Aprovados" targetRef="Activity_GerarUserStoriesIA" />
+    <bpmn:sequenceFlow id="Flow_09" sourceRef="Activity_GerarUserStoriesIA" targetRef="Activity_ExportarConsolidado" />
+    <bpmn:sequenceFlow id="Flow_10" sourceRef="Activity_ExportarConsolidado" targetRef="Activity_BaixarPDF" />
+    <bpmn:sequenceFlow id="Flow_11" sourceRef="Activity_BaixarPDF" targetRef="EndEvent_Fim" />
   </bpmn:process>
-  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_03aal42">
-      <bpmndi:BPMNShape id="Participant_0zwmnwq_di" bpmnElement="Participant_0zwmnwq" isHorizontal="true">
-        <dc:Bounds x="202" y="62" width="600" height="336" />
+  <bpmndi:BPMNDiagram id="BPMNDiagram_PlataformaRF">
+    <bpmndi:BPMNPlane id="BPMNPlane_PlataformaRF" bpmnElement="Collaboration_PlataformaRF">
+      <bpmndi:BPMNShape id="Participant_Plataforma_di" bpmnElement="Participant_Plataforma" isHorizontal="true">
+        <dc:Bounds x="120" y="40" width="3400" height="1180" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
-        <dc:Bounds x="252" y="82" width="36" height="36" />
+      <bpmndi:BPMNShape id="Lane_Usuario_di" bpmnElement="Lane_Usuario" isHorizontal="true">
+        <dc:Bounds x="150" y="40" width="3370" height="180" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Gateway_09w5b6u_di" bpmnElement="Gateway_09w5b6u" isMarkerVisible="true">
-        <dc:Bounds x="345" y="185" width="50" height="50" />
+      <bpmndi:BPMNShape id="Lane_IA_RF_di" bpmnElement="Lane_IA_RF" isHorizontal="true">
+        <dc:Bounds x="150" y="220" width="3370" height="180" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Gateway_1xbqg7t_di" bpmnElement="Gateway_1xbqg7t" isMarkerVisible="true">
-        <dc:Bounds x="445" y="185" width="50" height="50" />
+      <bpmndi:BPMNShape id="Lane_Validacao_RF_di" bpmnElement="Lane_Validacao_RF" isHorizontal="true">
+        <dc:Bounds x="150" y="400" width="3370" height="180" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Activity_0mf7jpb_di" bpmnElement="Activity_0mf7jpb">
-        <dc:Bounds x="550" y="170" width="100" height="80" />
+      <bpmndi:BPMNShape id="Lane_Gerador_UC_di" bpmnElement="Lane_Gerador_UC" isHorizontal="true">
+        <dc:Bounds x="150" y="580" width="3370" height="180" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Event_0wykw5r_di" bpmnElement="Event_0wykw5r">
-        <dc:Bounds x="452" y="302" width="36" height="36" />
+      <bpmndi:BPMNShape id="Lane_Exportacao_di" bpmnElement="Lane_Exportacao" isHorizontal="true">
+        <dc:Bounds x="150" y="760" width="3370" height="180" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Flow_1ujsayw_di" bpmnElement="Flow_1ujsayw">
-        <di:waypoint x="395" y="210" />
-        <di:waypoint x="445" y="210" />
+      <bpmndi:BPMNShape id="Lane_IA_US_di" bpmnElement="Lane_IA_US" isHorizontal="true">
+        <dc:Bounds x="150" y="940" width="3370" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_Inicio_di" bpmnElement="StartEvent_Inicio">
+        <dc:Bounds x="192" y="112" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="175" y="78" width="70" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_InformarDescricao_di" bpmnElement="Activity_InformarDescricao">
+        <dc:Bounds x="280" y="90" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ExtrairRFsIA_di" bpmnElement="Activity_ExtrairRFsIA">
+        <dc:Bounds x="500" y="270" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ExibirTabelaRF_di" bpmnElement="Activity_ExibirTabelaRF">
+        <dc:Bounds x="720" y="450" width="180" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_RF_Aprovados_di" bpmnElement="Gateway_RF_Aprovados" isMarkerVisible="true">
+        <dc:Bounds x="955" y="465" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="940" y="425" width="80" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_EditarRFs_di" bpmnElement="Activity_EditarRFs">
+        <dc:Bounds x="900" y="90" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ConverterRFparaUC_di" bpmnElement="Activity_ConverterRFparaUC">
+        <dc:Bounds x="1080" y="630" width="180" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_DetectarRelacoesIncludeExtend_di" bpmnElement="Activity_DetectarRelacoesIncludeExtend">
+        <dc:Bounds x="1320" y="630" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_GerarArtefatosUC_di" bpmnElement="Activity_GerarArtefatosUC">
+        <dc:Bounds x="1580" y="810" width="220" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RevisarUCs_di" bpmnElement="Activity_RevisarUCs">
+        <dc:Bounds x="1860" y="90" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_UC_Aprovados_di" bpmnElement="Gateway_UC_Aprovados" isMarkerVisible="true">
+        <dc:Bounds x="2135" y="825" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2115" y="785" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_EditarUCs_di" bpmnElement="Activity_EditarUCs">
+        <dc:Bounds x="2080" y="90" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_GerarUserStoriesIA_di" bpmnElement="Activity_GerarUserStoriesIA">
+        <dc:Bounds x="2320" y="990" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ExportarConsolidado_di" bpmnElement="Activity_ExportarConsolidado">
+        <dc:Bounds x="2600" y="810" width="200" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_BaixarPDF_di" bpmnElement="Activity_BaixarPDF">
+        <dc:Bounds x="2920" y="90" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Fim_di" bpmnElement="EndEvent_Fim">
+        <dc:Bounds x="3142" y="112" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3115" y="78" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataObjectRef_Texto_di" bpmnElement="DataObjectRef_Texto">
+        <dc:Bounds x="310" y="18" width="36" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="285" y="6" width="86" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataObjectRef_RFJson_di" bpmnElement="DataObjectRef_RFJson">
+        <dc:Bounds x="562" y="198" width="36" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataObjectRef_RFmd_di" bpmnElement="DataObjectRef_RFmd">
+        <dc:Bounds x="612" y="198" width="36" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataObjectRef_UCPack_di" bpmnElement="DataObjectRef_UCPack">
+        <dc:Bounds x="1672" y="738" width="36" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataObjectRef_USPack_di" bpmnElement="DataObjectRef_USPack">
+        <dc:Bounds x="2402" y="918" width="36" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataObjectRef_PDF_di" bpmnElement="DataObjectRef_PDF">
+        <dc:Bounds x="2682" y="738" width="36" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TextAn_Legenda_di" bpmnElement="TextAn_Legenda">
+        <dc:Bounds x="120" y="1240" width="520" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TextAn_ArtefatosRF_di" bpmnElement="TextAn_ArtefatosRF">
+        <dc:Bounds x="660" y="1240" width="380" height="55" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TextAn_ArtefatosUC_di" bpmnElement="TextAn_ArtefatosUC">
+        <dc:Bounds x="1060" y="1240" width="560" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TextAn_ArtefatosUS_di" bpmnElement="TextAn_ArtefatosUS">
+        <dc:Bounds x="1640" y="1240" width="420" height="55" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TextAn_Reset_di" bpmnElement="TextAn_Reset">
+        <dc:Bounds x="2080" y="1310" width="520" height="55" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_01_di" bpmnElement="Flow_01">
+        <di:waypoint x="228" y="130" />
+        <di:waypoint x="280" y="130" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_1vqrgbu_di" bpmnElement="Flow_1vqrgbu">
-        <di:waypoint x="495" y="210" />
-        <di:waypoint x="550" y="210" />
+      <bpmndi:BPMNEdge id="Flow_02_di" bpmnElement="Flow_02">
+        <di:waypoint x="440" y="130" />
+        <di:waypoint x="470" y="130" />
+        <di:waypoint x="470" y="310" />
+        <di:waypoint x="500" y="310" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_1v82s9e_di" bpmnElement="Flow_1v82s9e">
-        <di:waypoint x="370" y="235" />
-        <di:waypoint x="370" y="320" />
-        <di:waypoint x="452" y="320" />
+      <bpmndi:BPMNEdge id="Flow_03_di" bpmnElement="Flow_03">
+        <di:waypoint x="660" y="310" />
+        <di:waypoint x="690" y="310" />
+        <di:waypoint x="690" y="490" />
+        <di:waypoint x="720" y="490" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Association_0s6atx7_di" bpmnElement="Association_0s6atx7">
-        <di:waypoint x="488" y="320" />
-        <di:waypoint x="600" y="324" />
+      <bpmndi:BPMNEdge id="Flow_04_di" bpmnElement="Flow_04">
+        <di:waypoint x="900" y="490" />
+        <di:waypoint x="955" y="490" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNShape id="Group_1myji80_di" bpmnElement="Group_1myji80">
-        <dc:Bounds x="160" y="360" width="300" height="300" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="TextAnnotation_1vmdo5t_di" bpmnElement="TextAnnotation_1vmdo5t">
-        <dc:Bounds x="600" y="310" width="100" height="30" />
-        <bpmndi:BPMNLabel />
-      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_LoopRF_di" bpmnElement="Flow_LoopRF">
+        <di:waypoint x="980" y="465" />
+        <di:waypoint x="980" y="220" />
+        <di:waypoint x="980" y="130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_LoopRF_Volta_di" bpmnElement="Flow_LoopRF_Volta">
+        <di:waypoint x="900" y="130" />
+        <di:waypoint x="810" y="130" />
+        <di:waypoint x="810" y="490" />
+        <di:waypoint x="720" y="490" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_RF_OK_di" bpmnElement="Flow_RF_OK">
+        <di:waypoint x="1005" y="490" />
+        <di:waypoint x="1042" y="490" />
+        <di:waypoint x="1042" y="670" />
+        <di:waypoint x="1080" y="670" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_05_di" bpmnElement="Flow_05">
+        <di:waypoint x="1260" y="670" />
+        <di:waypoint x="1320" y="670" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_06_di" bpmnElement="Flow_06">
+        <di:waypoint x="1520" y="670" />
+        <di:waypoint x="1550" y="670" />
+        <di:waypoint x="1550" y="850" />
+        <di:waypoint x="1580" y="850" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_07_di" bpmnElement="Flow_07">
+        <di:waypoint x="1800" y="850" />
+        <di:waypoint x="1830" y="850" />
+        <di:waypoint x="1830" y="130" />
+        <di:waypoint x="1860" y="130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_08_di" bpmnElement="Flow_08">
+        <di:waypoint x="2060" y="130" />
+        <di:waypoint x="2100" y="130" />
+        <di:waypoint x="2100" y="850" />
+        <di:waypoint x="2135" y="850" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_LoopUC_di" bpmnElement="Flow_LoopUC">
+        <di:waypoint x="2160" y="825" />
+        <di:waypoint x="2160" y="220" />
+        <di:waypoint x="2160" y="130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_LoopUC_Volta_di" bpmnElement="Flow_LoopUC_Volta">
+        <di:waypoint x="2080" y="130" />
+        <di:waypoint x="2060" y="130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_UC_OK_di" bpmnElement="Flow_UC_OK">
+        <di:waypoint x="2160" y="875" />
+        <di:waypoint x="2160" y="1030" />
+        <di:waypoint x="2320" y="1030" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_09_di" bpmnElement="Flow_09">
+        <di:waypoint x="2520" y="1030" />
+        <di:waypoint x="2560" y="1030" />
+        <di:waypoint x="2560" y="890" />
+        <di:waypoint x="2600" y="890" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_10_di" bpmnElement="Flow_10">
+        <di:waypoint x="2800" y="850" />
+        <di:waypoint x="2860" y="850" />
+        <di:waypoint x="2860" y="130" />
+        <di:waypoint x="2920" y="130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_11_di" bpmnElement="Flow_11">
+        <di:waypoint x="3080" y="130" />
+        <di:waypoint x="3142" y="130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Assoc_Legenda_Start_di" bpmnElement="Assoc_Legenda_Start">
+        <di:waypoint x="210" y="148" />
+        <di:waypoint x="210" y="1240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Assoc_RF_IA_di" bpmnElement="Assoc_RF_IA">
+        <di:waypoint x="580" y="350" />
+        <di:waypoint x="850" y="1240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Assoc_UC_Export_di" bpmnElement="Assoc_UC_Export">
+        <di:waypoint x="1690" y="890" />
+        <di:waypoint x="1340" y="1240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Assoc_US_Final_di" bpmnElement="Assoc_US_Final">
+        <di:waypoint x="2700" y="890" />
+        <di:waypoint x="1850" y="1240" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Assoc_Reset_di" bpmnElement="Assoc_Reset">
+        <di:waypoint x="360" y="170" />
+        <di:waypoint x="360" y="1310" />
+      </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>
