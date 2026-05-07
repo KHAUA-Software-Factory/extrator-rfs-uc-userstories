@@ -258,9 +258,15 @@ class PdfReportExporter:
         story.append(Spacer(1, 4))
 
     def _section_diagram(self, story: list, styles, result: UseCaseAnalysisResult, mm) -> None:
-        from reportlab.platypus import Paragraph, Spacer
+        from reportlab.platypus import PageBreak, Paragraph, Spacer
+        story.append(PageBreak())
         story.append(Paragraph("4. Diagrama de casos de uso", styles["Heading2Custom"]))
-        drawing = _svg_to_drawing(result.svg_diagram, max_width_mm=180, mm=mm)
+        drawing = _svg_to_drawing(
+            result.svg_diagram,
+            max_width_mm=180,
+            max_height_mm=230,
+            mm=mm,
+        )
         if drawing is None:
             story.append(
                 Paragraph(
@@ -390,7 +396,7 @@ def _index_relationships(document) -> dict:
     return {source_id: "; ".join(items) for source_id, items in by_source.items()}
 
 
-def _svg_to_drawing(svg_text: str, max_width_mm: float, mm):
+def _svg_to_drawing(svg_text: str, max_width_mm: float, mm, max_height_mm: float = 230.0):
     if not svg_text:
         return None
     try:
@@ -401,12 +407,15 @@ def _svg_to_drawing(svg_text: str, max_width_mm: float, mm):
         drawing = svg2rlg(BytesIO(svg_text.encode("utf-8")))
     except Exception:
         return None
-    if drawing is None:
-        return None
+    if drawing is None or not drawing.width or not drawing.height:
+        return drawing
 
     max_width = max_width_mm * mm
-    if drawing.width and drawing.width > max_width:
-        scale = max_width / float(drawing.width)
+    max_height = max_height_mm * mm
+    scale_w = max_width / float(drawing.width) if drawing.width > max_width else 1.0
+    scale_h = max_height / float(drawing.height) if drawing.height > max_height else 1.0
+    scale = min(scale_w, scale_h)
+    if scale < 1.0:
         drawing.width = drawing.width * scale
         drawing.height = drawing.height * scale
         drawing.scale(scale, scale)

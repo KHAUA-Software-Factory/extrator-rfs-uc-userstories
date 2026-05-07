@@ -45,5 +45,45 @@ class PdfReportTest(unittest.TestCase):
             self.assertGreater(len(data), 5_000, "PDF parece pequeno demais")
 
 
+@unittest.skipUnless(PDF_DEPS_AVAILABLE, "reportlab/svglib nao instalados")
+class PdfReportTallSvgTest(unittest.TestCase):
+    """Garante que diagramas SVG muito altos sao escalados para caber na pagina A4."""
+
+    def test_tall_svg_does_not_raise_layout_error(self):
+        from dataclasses import replace
+        text = (
+            "O cliente realiza login. O cliente consulta pedidos. "
+            "Para consultar pedidos, o cliente deve realizar login. "
+            "O atendente cadastra produtos. O gerente aprova relatorios."
+        )
+        result = build_analysis_service().execute(text)
+
+        tall_svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="510" height="2400" '
+            'viewBox="0 0 510 2400">'
+            '<rect x="10" y="10" width="490" height="2380" fill="white" stroke="black"/>'
+            '<text x="20" y="40" font-size="14">Diagrama gigante para regressao</text>'
+            "</svg>"
+        )
+        result_tall = replace(result, svg_diagram=tall_svg)
+
+        requirements = [
+            FunctionalRequirement(
+                id="RF001",
+                description="Consultar pedidos.",
+                actor="Cliente",
+                action="Consultar",
+                object_name="pedidos",
+                priority="Alta",
+            )
+        ]
+
+        with TemporaryDirectory() as tmp:
+            pdf_path = write_pdf_report(text, requirements, result_tall, Path(tmp))
+            self.assertIsNotNone(pdf_path, "geracao com SVG alto nao deveria abortar")
+            data = pdf_path.read_bytes()
+            self.assertTrue(data.startswith(b"%PDF-"))
+
+
 if __name__ == "__main__":
     unittest.main()

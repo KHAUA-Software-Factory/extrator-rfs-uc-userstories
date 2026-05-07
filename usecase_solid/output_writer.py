@@ -69,6 +69,10 @@ def write_pdf_report(
         PdfReportExporter().write(input_text, requirements, result, pdf_path, user_stories=user_stories or [])
     except RuntimeError:
         return None
+    except Exception as exc:  # pragma: no cover - falha defensiva para nao quebrar SVG/CSV/MD
+        import sys
+        print(f"[pdf] geracao do PDF falhou (artefatos restantes preservados): {exc}", file=sys.stderr)
+        return None
     return pdf_path
 
 
