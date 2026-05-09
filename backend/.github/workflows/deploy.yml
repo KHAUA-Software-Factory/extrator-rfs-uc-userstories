@@ -26,7 +26,7 @@ jobs:
       BACKEND_PUBLIC_PATH: /
       BACKEND_REMOTE_DIR: public_html/ms-app
       BACKEND_APP_ROOT: .
-      BACKEND_NODE_BIN: ''
+      BACKEND_NODE_BIN: /opt/cpanel/ea-nodejs20/bin/node
       BACKEND_ARTIFACT_DIR: deploy
 
     steps:
