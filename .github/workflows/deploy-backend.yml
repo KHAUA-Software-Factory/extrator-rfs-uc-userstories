@@ -79,6 +79,44 @@ jobs:
             echo "FIREBASE_SERVICE_ACCOUNT_FILE=service-account.json"
           } > .env
 
+      - name: Criar .htaccess de produção
+        env:
+          FTP_USER: ${{ secrets.USER }}
+          BACKEND_APP_ROOT: ${{ secrets.BACKEND_APP_ROOT }}
+          BACKEND_BASE_URI: ${{ secrets.BACKEND_BASE_URI }}
+          BACKEND_NODE_PATH: ${{ secrets.BACKEND_NODE_PATH }}
+        run: |
+          app_root="${BACKEND_APP_ROOT:-/home/${FTP_USER}/public_html/ms-app}"
+          base_uri="${BACKEND_BASE_URI:-/}"
+          node_path="${BACKEND_NODE_PATH:-/home/${FTP_USER}/nodevenv/public_html/ms-app/22/bin/node}"
+
+          if [ -z "$FTP_USER" ] && { [ -z "$BACKEND_APP_ROOT" ] || [ -z "$BACKEND_NODE_PATH" ]; }; then
+            echo "Defina USER ou defina BACKEND_APP_ROOT e BACKEND_NODE_PATH."
+            exit 1
+          fi
+
+          mkdir -p tmp
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > tmp/restart.txt
+
+          {
+            echo "# Gerado pelo GitHub Actions para Locaweb/cPanel + Passenger."
+            echo "RewriteEngine On"
+            echo "RewriteCond %{HTTPS} !=on"
+            echo "RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]"
+            echo "RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]"
+            echo ""
+            echo "# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION BEGIN"
+            echo "PassengerAppRoot \"$app_root\""
+            echo "PassengerBaseURI \"$base_uri\""
+            echo "PassengerNodejs \"$node_path\""
+            echo "PassengerAppType node"
+            echo "PassengerStartupFile index.js"
+            echo "PassengerAppEnv production"
+            echo "# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END"
+            echo ""
+            echo "DirectoryIndex disabled"
+          } > .htaccess
+
       - name: FTP Deploy Locaweb
         uses: locaweb/ftp-deploy@1.0.0
         with:
