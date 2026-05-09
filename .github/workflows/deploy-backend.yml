@@ -27,6 +27,8 @@ jobs:
       NODE_VERSION: 22
       BACKEND_PUBLIC_PATH: /
       BACKEND_REMOTE_DIR: public_html/ms-app
+      BACKEND_NODE_BIN: /opt/cpanel/ea-nodejs22/bin/node
+      BACKEND_ARTIFACT_DIR: deploy
 
     defaults:
       run:
@@ -50,8 +52,8 @@ jobs:
           npm run test
           npm audit --omit=dev --audit-level=moderate
 
-      - name: Remover dependências de desenvolvimento
-        run: npm prune --omit=dev
+      - name: Build
+        run: npm run build
 
       - name: Credenciais Firebase (service account)
         env:
@@ -81,10 +83,9 @@ jobs:
             echo "ADMIN_EMAILS=${ADMIN_EMAILS}"
             echo "FIREBASE_SERVICE_ACCOUNT_FILE=service-account.json"
             echo "NODE_ENV=production"
-            echo "AUTO_INSTALL_DEPS=true"
           } > .env
 
-      - name: Criar .htaccess de produção
+      - name: Preparar artefato de produção
         env:
           FTP_USER: ${{ secrets.USER }}
           BACKEND_APP_ROOT_OVERRIDE: ${{ secrets.BACKEND_APP_ROOT }}
@@ -93,15 +94,18 @@ jobs:
         run: |
           app_root="${BACKEND_APP_ROOT_OVERRIDE:-/home/${FTP_USER}/${BACKEND_REMOTE_DIR}}"
           base_uri="${BACKEND_BASE_URI_OVERRIDE:-${BACKEND_PUBLIC_PATH}}"
-          node_path="${BACKEND_NODE_PATH_OVERRIDE:-/home/${FTP_USER}/nodevenv/${BACKEND_REMOTE_DIR}/${NODE_VERSION}/bin/node}"
+          node_path="${BACKEND_NODE_PATH_OVERRIDE:-${BACKEND_NODE_BIN}}"
 
-          if [ -z "$FTP_USER" ] && { [ -z "$BACKEND_APP_ROOT_OVERRIDE" ] || [ -z "$BACKEND_NODE_PATH_OVERRIDE" ]; }; then
-            echo "Defina USER ou defina BACKEND_APP_ROOT e BACKEND_NODE_PATH."
+          if [ -z "$FTP_USER" ] && [ -z "$BACKEND_APP_ROOT_OVERRIDE" ]; then
+            echo "Defina USER ou BACKEND_APP_ROOT."
             exit 1
           fi
 
-          mkdir -p tmp
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > tmp/restart.txt
+          rm -rf "$BACKEND_ARTIFACT_DIR"
+          mkdir -p "$BACKEND_ARTIFACT_DIR/tmp"
+          cp dist/index.cjs "$BACKEND_ARTIFACT_DIR/index.js"
+          cp .env service-account.json "$BACKEND_ARTIFACT_DIR/"
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > "$BACKEND_ARTIFACT_DIR/tmp/restart.txt"
 
           {
             echo "# Gerado pelo GitHub Actions para Locaweb/cPanel + Passenger."
@@ -121,7 +125,7 @@ jobs:
             echo "# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END"
             echo ""
             echo "DirectoryIndex disabled"
-          } > .htaccess
+          } > "$BACKEND_ARTIFACT_DIR/.htaccess"
 
       - name: FTP Deploy Locaweb
         uses: locaweb/ftp-deploy@1.0.0
@@ -129,7 +133,7 @@ jobs:
           host: ${{ secrets.HOST }}
           user: ${{ secrets.USER }}
           password: ${{ secrets.PASS }}
-          localDir: backend
+          localDir: backend/${{ env.BACKEND_ARTIFACT_DIR }}
           remoteDir: ${{ env.BACKEND_REMOTE_DIR }}
           forceSsl: false
           options: >-

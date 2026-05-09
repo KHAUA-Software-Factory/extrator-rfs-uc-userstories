@@ -1,16 +1,28 @@
 import dotenv from 'dotenv';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { createApp } from './app.js';
 import { initFirebaseAdminFromEnv } from './services/firebaseAdmin.js';
 import { createOpenAIClientFromEnv } from './services/openaiClient.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+function resolveAppRoot() {
+  if (process.env.APP_ROOT) return path.resolve(process.env.APP_ROOT);
+
+  const cwd = process.cwd();
+  if (existsSync(path.join(cwd, '.env')) || existsSync(path.join(cwd, 'service-account.json'))) {
+    return cwd;
+  }
+  if (existsSync(path.join(cwd, 'backend', '.env'))) {
+    return path.join(cwd, 'backend');
+  }
+  return cwd;
+}
+
+const appRoot = resolveAppRoot();
 
 // Load backend/.env even when started from repo root.
-dotenv.config({ path: path.join(__dirname, '..', '.env'), quiet: true });
+dotenv.config({ path: path.join(appRoot, '.env'), quiet: true });
 
 function getAdminEmails() {
   return new Set(
@@ -27,7 +39,7 @@ const openai = createOpenAIClientFromEnv(process.env);
 let adminApp = null;
 try {
   // baseDir should be backend/ so relative FIREBASE_SERVICE_ACCOUNT_FILE works.
-  adminApp = initFirebaseAdminFromEnv({ env: process.env, baseDir: path.join(__dirname, '..') });
+  adminApp = initFirebaseAdminFromEnv({ env: process.env, baseDir: appRoot });
 } catch (error) {
   console.warn(`Firebase Admin not configured: ${error.message}`);
   adminApp = null;
