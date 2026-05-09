@@ -4,7 +4,7 @@
   "description": "API do extrator de elementos de engenharia de software",
   "main": "index.js",
   "scripts": {
-    "build": "esbuild src/server.js --bundle --platform=node --target=node22 --format=cjs --outfile=dist/index.cjs",
+    "build": "esbuild src/server.js --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs",
     "dev": "node index.js",
     "test": "vitest run",
     "lint": "eslint .",

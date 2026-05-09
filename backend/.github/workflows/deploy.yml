@@ -25,7 +25,8 @@ jobs:
       NODE_VERSION: 22
       BACKEND_PUBLIC_PATH: /
       BACKEND_REMOTE_DIR: public_html/ms-app
-      BACKEND_NODE_BIN: /opt/cpanel/ea-nodejs22/bin/node
+      BACKEND_APP_ROOT: .
+      BACKEND_NODE_BIN: ''
       BACKEND_ARTIFACT_DIR: deploy
 
     steps:
@@ -86,12 +87,12 @@ jobs:
           BACKEND_BASE_URI_OVERRIDE: ${{ secrets.BACKEND_BASE_URI }}
           BACKEND_NODE_PATH_OVERRIDE: ${{ secrets.BACKEND_NODE_PATH }}
         run: |
-          app_root="${BACKEND_APP_ROOT_OVERRIDE:-/home/${FTP_USER}/${BACKEND_REMOTE_DIR}}"
+          app_root="${BACKEND_APP_ROOT_OVERRIDE:-${BACKEND_APP_ROOT}}"
           base_uri="${BACKEND_BASE_URI_OVERRIDE:-${BACKEND_PUBLIC_PATH}}"
           node_path="${BACKEND_NODE_PATH_OVERRIDE:-${BACKEND_NODE_BIN}}"
 
-          if [ -z "$FTP_USER" ] && [ -z "$BACKEND_APP_ROOT_OVERRIDE" ]; then
-            echo "Defina USER ou BACKEND_APP_ROOT."
+          if [ -z "$app_root" ]; then
+            echo "Defina BACKEND_APP_ROOT."
             exit 1
           fi
 
@@ -111,11 +112,12 @@ jobs:
             echo "# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION BEGIN"
             echo "PassengerAppRoot \"$app_root\""
             echo "PassengerBaseURI \"$base_uri\""
-            echo "PassengerNodejs \"$node_path\""
+            if [ -n "$node_path" ]; then
+              echo "PassengerNodejs \"$node_path\""
+            fi
             echo "PassengerAppType node"
             echo "PassengerStartupFile index.js"
             echo "PassengerAppEnv production"
-            echo "PassengerAppLogFile \"$app_root/passenger.log\""
             echo "# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END"
             echo ""
             echo "DirectoryIndex disabled"
