@@ -1,0 +1,33 @@
+{
+  "name": "extrator-elementos-engenharia-software-backend",
+  "version": "1.0.0",
+  "description": "API do extrator de elementos de engenharia de software",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node index.js",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier \"**/*.{js,json,md}\" --check",
+    "format:fix": "prettier \"**/*.{js,json,md}\" --write"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^5.1.0",
+    "firebase-admin": "^13.0.2",
+    "openai": "^4.83.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.4.2",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.5"
+  }
+}

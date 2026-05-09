@@ -1,0 +1,84 @@
+# Usado quando este diretório é a raiz do repositório (repo só do backend).
+name: Deploy via FTP
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: ms-app.khaua.com.br
+    runs-on: ubuntu-latest
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Validar código
+        run: |
+          npm run lint
+          npm run test
+          npm audit --omit=dev
+
+      - name: Remover dependências de desenvolvimento
+        run: npm prune --omit=dev
+
+      - name: Credenciais Firebase (service account)
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT_JSON" ]; then
+            echo "Defina o secret FIREBASE_SERVICE_ACCOUNT_JSON no repositório."
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > service-account.json
+
+      - name: Criar .env de produção
+        env:
+          BACKEND_PORT: ${{ secrets.BACKEND_PORT }}
+          BACKEND_HOST: ${{ secrets.BACKEND_HOST }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
+        run: |
+          {
+            echo "PORT=${BACKEND_PORT:-4000}"
+            echo "HOST=${BACKEND_HOST}"
+            echo "OPENAI_API_KEY=${OPENAI_API_KEY}"
+            echo "OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.2}"
+            echo "OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+            echo "ADMIN_EMAILS=${ADMIN_EMAILS}"
+            echo "FIREBASE_SERVICE_ACCOUNT_FILE=service-account.json"
+          } > .env
+
+      - name: FTP Deploy Locaweb
+        uses: locaweb/ftp-deploy@1.0.0
+        with:
+          host: ${{ secrets.HOST }}
+          user: ${{ secrets.USER }}
+          password: ${{ secrets.PASS }}
+          localDir: .
+          remoteDir: public_html/ms-app
+          forceSsl: false
