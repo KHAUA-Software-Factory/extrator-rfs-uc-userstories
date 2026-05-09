@@ -27,7 +27,7 @@ jobs:
       NODE_VERSION: 22
       BACKEND_PUBLIC_PATH: /
       BACKEND_REMOTE_DIR: public_html/ms-app
-      BACKEND_APP_ROOT: .
+      BACKEND_APP_ROOT: /home/storage/b/50/72/khaua1/public_html/ms-app
       BACKEND_NODE_BIN: ''
       BACKEND_ARTIFACT_DIR: deploy
       BACKEND_CORS_ORIGINS: https://ms.khaua.com.br,https://khaua.com.br,https://www.khaua.com.br
