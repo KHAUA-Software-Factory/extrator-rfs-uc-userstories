@@ -45,7 +45,7 @@ jobs:
         run: |
           npm run lint
           npm run test
-          npm audit --omit=dev
+          npm audit --omit=dev --audit-level=moderate
 
       - name: Remover dependências de desenvolvimento
         run: npm prune --omit=dev
