@@ -24,7 +24,7 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       NODE_VERSION: 22
       FRONTEND_PUBLIC_PATH: /ms/
-      FRONTEND_API_BASE_URL: /ms-app
+      FRONTEND_API_BASE_URL: https://ms-app.khaua.com.br
       FRONTEND_REMOTE_DIR: public_html/ms
 
     steps:

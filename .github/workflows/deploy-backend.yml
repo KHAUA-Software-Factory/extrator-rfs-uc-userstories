@@ -19,13 +19,13 @@ concurrency:
 
 jobs:
   deploy:
-    name: khaua.com.br/ms-app
+    name: ms-app.khaua.com.br
     runs-on: ubuntu-latest
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       NODE_VERSION: 22
-      BACKEND_PUBLIC_PATH: /ms-app
+      BACKEND_PUBLIC_PATH: /
       BACKEND_REMOTE_DIR: public_html/ms-app
 
     defaults:
@@ -49,6 +49,9 @@ jobs:
           npm run lint
           npm run test
           npm audit --omit=dev --audit-level=moderate
+
+      - name: Remover dependências de desenvolvimento
+        run: npm prune --omit=dev
 
       - name: Credenciais Firebase (service account)
         env:
@@ -77,6 +80,8 @@ jobs:
             echo "OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}"
             echo "ADMIN_EMAILS=${ADMIN_EMAILS}"
             echo "FIREBASE_SERVICE_ACCOUNT_FILE=service-account.json"
+            echo "NODE_ENV=production"
+            echo "AUTO_INSTALL_DEPS=true"
           } > .env
 
       - name: Criar .htaccess de produção
@@ -112,6 +117,7 @@ jobs:
             echo "PassengerAppType node"
             echo "PassengerStartupFile index.js"
             echo "PassengerAppEnv production"
+            echo "PassengerAppLogFile \"$app_root/passenger.log\""
             echo "# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END"
             echo ""
             echo "DirectoryIndex disabled"
@@ -127,8 +133,6 @@ jobs:
           remoteDir: ${{ env.BACKEND_REMOTE_DIR }}
           forceSsl: false
           options: >-
-            --exclude-glob node_modules
-            --exclude-glob node_modules/**
             --exclude-glob coverage
             --exclude-glob coverage/**
             --exclude-glob .github
