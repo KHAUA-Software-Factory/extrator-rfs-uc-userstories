@@ -22,6 +22,8 @@ OPENAI_MODEL=gpt-5.2
 OPENAI_BASE_URL=https://api.openai.com/v1
 FIREBASE_SERVICE_ACCOUNT_FILE=service-account.json
 ADMIN_EMAILS=
+CORS_ORIGINS=https://ms.khaua.com.br,https://khaua.com.br,https://www.khaua.com.br
+JSON_BODY_LIMIT=1mb
 ```
 
 O arquivo `service-account.json` e qualquer `.env` local ficam ignorados pelo Git.
@@ -56,11 +58,17 @@ Firestore. No Google Cloud Console, conceda a essa service account pelo menos o 
 
 ## Deploy
 
-O workflow em `.github/workflows/deploy.yml` envia o backend por FTP.
+Os workflows enviam o backend por FTPS, com a aplicação Node fora de `public_html` e
+uma ponte Passenger pública. No monorepo, use `.github/workflows/deploy-backend.yml`;
+quando `backend/` for a raiz do repo, use `backend/.github/workflows/deploy.yml`.
 
 Configure estes secrets no repositorio do backend:
 
-- `FTP_SERVER`
-- `FTP_USERNAME`
-- `FTP_PASSWORD`
-- `FTP_BACKEND_DIR`
+- `HOST`
+- `USER`
+- `PASS`
+- `BACKEND_APP_ROOT` (opcional; padrao do workflow para `nodeapps/ms-app`)
+- `BACKEND_BASE_URI` (opcional; padrao `/`)
+- `BACKEND_NODE_PATH` (opcional; padrao Node 20 do cPanel)
+- `CORS_ORIGINS` (opcional; padrao: `https://ms.khaua.com.br,https://khaua.com.br,https://www.khaua.com.br`)
+- `JSON_BODY_LIMIT` (opcional; padrao: `1mb`)

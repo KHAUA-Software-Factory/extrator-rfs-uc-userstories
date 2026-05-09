@@ -1,10 +1,28 @@
 # Force HTTPS for the static frontend on Apache/Locaweb.
 RewriteEngine On
 RewriteRule ^__path\.php$ - [R=404,L]
+RewriteRule ^(\.env|\.git|github-secrets\.env|service-account.*|package(-lock)?\.json)$ - [F,L]
 
 RewriteCond %{HTTPS} !=on
 RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  Header always set Content-Security-Policy "default-src 'self'; connect-src 'self' https://ms-app.khaua.com.br https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com; img-src 'self' data: https:; script-src 'self' https://apis.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-src 'self' https://*.firebaseapp.com https://accounts.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests"
+
+  <FilesMatch "\.(?:css|gif|ico|jpeg|jpg|js|png|svg|webp|woff|woff2)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  <FilesMatch "^index\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
 
 # Let Vite/React handle client-side routes.
 RewriteCond %{REQUEST_FILENAME} !-f

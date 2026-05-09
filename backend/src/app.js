@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { createRequireFirebaseUser } from './middleware/requireFirebaseUser.js';
+import { applySecurityHeaders, createCorsOptions, jsonErrorHandler } from './security.js';
 
 import { registerEnsureClaimsRoute } from './features/auth/ensureClaims.route.js';
 import { registerExtractRequirementsRoute } from './features/requirements/extractRequirements.route.js';
@@ -11,8 +12,10 @@ import { registerGenerateUserStoriesRoute } from './features/userStories/generat
 
 export function createApp({ openai, adminApp, adminEmails, env = process.env } = {}) {
   const app = express();
-  app.use(cors());
-  app.use(express.json());
+  applySecurityHeaders(app, env);
+  app.use(cors(createCorsOptions(env)));
+  app.use(express.json({ limit: env.JSON_BODY_LIMIT || '1mb' }));
+  app.use(jsonErrorHandler);
 
   const requireFirebaseUser = createRequireFirebaseUser({ adminApp, devBypassEnv: env });
 
