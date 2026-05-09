@@ -20,4 +20,3 @@ export type SessionListItem = {
 };
 
 export type SessionLoaded = SessionDoc & { id: string; uid: string };
-

@@ -98,7 +98,7 @@ Persistência: tudo salvo como TEXTO em sessões no Firebase Firestore. (Sem ger
       <bpmn:incoming>F04</bpmn:incoming>
       <bpmn:outgoing>F_RF_API_Sim</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:exclusiveGateway id="GW_ModoSugestoes" name="Chamada de extração de RFs&#10;(backend: /api/extract-requirements)">
+    <bpmn:exclusiveGateway id="GW_ModoSugestoes" name="Chamada de extração de RFs&#10;(frontend: OpenAI /v1/responses)">
       <bpmn:incoming>F_RF_API_Sim</bpmn:incoming>
       <bpmn:outgoing>F_Sug_Sim</bpmn:outgoing>
       <bpmn:outgoing>F_Sug_Nao</bpmn:outgoing>

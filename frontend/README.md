@@ -1,8 +1,11 @@
 # Extrator de Elementos de Engenharia de Software - Frontend
 
-Interface Vite + React para o fluxo de engenharia de requisitos com IA.
+Aplicacao Vite + React com Firebase Auth, Firestore direto no navegador e chamadas
+diretas para a API da OpenAI.
 
-Este diretorio foi preparado para ser um repositorio independente do backend.
+Nao existe mais backend Node neste projeto. Sessoes sao lidas e gravadas com o
+SDK cliente do Firestore em `users/{uid}/sessions/{sessionId}`. A geracao com IA
+usa `fetch` para `https://api.openai.com/v1/responses`.
 
 ## Variaveis de ambiente
 
@@ -19,14 +22,42 @@ VITE_FIREBASE_API_KEY=
 VITE_FIREBASE_AUTH_DOMAIN=
 VITE_FIREBASE_PROJECT_ID=
 VITE_FIREBASE_APP_ID=
-VITE_API_BASE_URL=https://api.seu-dominio.com
-VITE_BASE_PATH=/
+VITE_OPENAI_API_KEY=
+VITE_OPENAI_MODEL=gpt-5.2
+VITE_OPENAI_BASE_URL=https://api.openai.com/v1
+VITE_DEMO_AUTH=1
+VITE_BASE_PATH=/ms/
 ```
 
-Em desenvolvimento local, `VITE_API_BASE_URL` pode apontar para `http://localhost:4000`.
-Para publicar em um subdomínio cujo document root já é a pasta do app, use
-`VITE_BASE_PATH=/`. Use `/ms/` apenas se o frontend for acessado por um caminho como
-`https://khaua.com.br/ms/`.
+No GitHub Actions, cadastre a chave da OpenAI como secret
+`VITE_OPENAI_API_KEY`. O workflow grava esse valor em `.env.production` antes do
+build.
+
+Aviso importante: qualquer variavel `VITE_*` fica embutida no JavaScript final.
+Sem backend/proxy, a chave da OpenAI fica exposta para quem abrir o site.
+
+## Firebase
+
+Publique as regras do Firestore em `../firestore.rules`. O app espera:
+
+```text
+users/{uid}/sessions/{sessionId}
+```
+
+Usuarios autenticados precisam estar cadastrados em `userAccess/{gmail}` com:
+
+```json
+{ "email": "nome@gmail.com", "role": "admin" }
+```
+
+Niveis:
+
+- `admin`: ve todas as sessoes e acessa a gestao de usuarios.
+- `user`: ve apenas as proprias sessoes.
+
+Para criar o primeiro admin sem backend, cadastre manualmente o documento
+`userAccess/seu-email@gmail.com` no Firebase Console ou use uma conta com custom
+claim `admin=true`.
 
 ## Desenvolvimento
 
@@ -46,13 +77,20 @@ npm run build
 ## Deploy
 
 Os workflows compilam o projeto e enviam `dist/` por FTPS. No monorepo, use
-`.github/workflows/deploy-frontend.yml`; quando `frontend/` for a raiz do repo, use
-`frontend/.github/workflows/deploy.yml`.
+`.github/workflows/deploy-frontend.yml`; quando `frontend/` for a raiz do repo,
+use `frontend/.github/workflows/deploy.yml`.
 
-Configure estes secrets no repositorio do frontend:
+Secrets esperados:
 
 - `HOST`
 - `USER`
 - `PASS`
-- `VITE_API_BASE_URL` (opcional; padrao: `https://ms-app.khaua.com.br`)
-- `VITE_BASE_PATH` (opcional; padrao: `/`)
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_APP_ID`
+- `VITE_OPENAI_API_KEY`
+- `VITE_OPENAI_MODEL` (opcional)
+- `VITE_OPENAI_BASE_URL` (opcional)
+- `VITE_DEMO_AUTH` (opcional; padrao do workflow: `1`)
+- `VITE_BASE_PATH` (opcional; padrao: `/ms/`)

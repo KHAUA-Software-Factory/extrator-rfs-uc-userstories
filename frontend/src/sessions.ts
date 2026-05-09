@@ -4,7 +4,8 @@ export {
   createSession,
   listAllSessionsAsAdmin,
   listMySessions,
+  loadSession,
   loadMySession,
+  updateSession,
   updateMySession,
 } from './features/sessions/api/sessionsRepo';
-

@@ -12,11 +12,21 @@ import Col from 'react-bootstrap/Col';
 import Offcanvas from 'react-bootstrap/Offcanvas';
 import Nav from 'react-bootstrap/Nav';
 import Card from 'react-bootstrap/Card';
-import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 
 import { auth, googleProvider } from './firebase';
 import {
-  ensureClaims,
+  createDemoAuthUser,
+  clearActiveDemoUser,
+  DEMO_USERS,
+  demoAuthEnabled,
+  getActiveDemoUser,
+  isDemoAuthUser,
+  setActiveDemoUser,
+  type AppUser,
+  type DemoUserProfile,
+} from './demoAuth';
+import {
   extractRequirements,
   generateUseCases,
   generateUserStories,
@@ -26,13 +36,21 @@ import {
 } from './api';
 import {
   createSession,
+  loadSession,
   listAllSessionsAsAdmin,
   listMySessions,
   loadMySession,
-  updateMySession,
+  updateSession,
   type SessionListItem,
   type SessionLoaded,
 } from './sessions';
+import {
+  getMyAccessUser,
+  listAccessUsers,
+  removeAccessUser,
+  saveAccessUser,
+} from './features/access/api/accessRepo';
+import type { AccessRole, AccessUser } from './features/access/model/types';
 import {
   ReactFlow,
   addEdge,
@@ -179,14 +197,21 @@ function ProcessingStatus({ processing }: { processing: ProcessingState | null }
 }
 
 function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [accessRole, setAccessRole] = useState<AccessRole | null>(null);
+  const [accessUsers, setAccessUsers] = useState<AccessUser[]>([]);
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [accessEmail, setAccessEmail] = useState('');
+  const [accessRoleDraft, setAccessRoleDraft] = useState<AccessRole>('user');
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [activeSession, setActiveSession] = useState<SessionLoaded | null>(null);
-  const [activeView, setActiveView] = useState<'dashboard' | 'sessions' | 'workspace'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'sessions' | 'users' | 'workspace'>(
+    'dashboard',
+  );
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [phase, setPhase] = useState<PhaseId>(1);
   const [descriptionText, setDescriptionText] = useState('');
@@ -215,9 +240,11 @@ function App() {
       (u) => {
         authStateResolved = true;
         window.clearTimeout(fallbackTimer);
-        setUser(u);
+        const demoProfile = !u && demoAuthEnabled ? getActiveDemoUser() : null;
+        const nextUser = u || (demoProfile ? createDemoAuthUser(demoProfile) : null);
+        setUser(nextUser);
         setLoading(false);
-        if (u) {
+        if (nextUser) {
           // Always land on the dashboard after login (no auto-open workspace).
           setActiveView('dashboard');
           setSidebarOpen(false);
@@ -251,13 +278,14 @@ function App() {
     let cancelled = false;
     (async () => {
       try {
-        const result = await ensureClaims();
-        if (result.updated) {
-          // refresh token to get new claims
-          await user.getIdToken(true);
+        const accessUser = await getMyAccessUser();
+        if (!cancelled) {
+          setAccessRole(accessUser?.role || null);
+          setIsAdmin(accessUser?.role === 'admin');
+          if (!accessUser) {
+            setError('Seu Gmail ainda não está cadastrado na gestão de usuários.');
+          }
         }
-        const tokenResult = await user.getIdTokenResult();
-        if (!cancelled) setIsAdmin(tokenResult.claims.admin === true);
       } catch (e) {
         if (!cancelled) setError(getErrorMessage(e));
       }
@@ -271,16 +299,23 @@ function App() {
     if (!user) {
       setSessions([]);
       setIsAdmin(false);
+      setAccessRole(null);
+      setAccessUsers([]);
       setActiveSession(null);
       setActiveView('dashboard');
       setPhase(1);
+      return;
+    }
+    if (!accessRole) {
+      setSessions([]);
       return;
     }
     let cancelled = false;
     setSessionsLoading(true);
     (async () => {
       try {
-        const items = isAdmin ? await listAllSessionsAsAdmin() : await listMySessions();
+        const items =
+          accessRole === 'admin' ? await listAllSessionsAsAdmin() : await listMySessions();
         if (!cancelled) setSessions(items);
       } catch (e) {
         if (!cancelled) setError(getErrorMessage(e));
@@ -291,7 +326,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [user, isAdmin]);
+  }, [user, accessRole]);
 
   // Guard: never show Workspace unless a session is selected.
   useEffect(() => {
@@ -299,7 +334,29 @@ function App() {
       setActiveView('dashboard');
       setPhase(1);
     }
-  }, [activeView, activeSession]);
+    if (activeView === 'users' && !isAdmin) {
+      setActiveView('dashboard');
+    }
+  }, [activeView, activeSession, isAdmin]);
+
+  useEffect(() => {
+    if (activeView !== 'users' || !isAdmin) return;
+    let cancelled = false;
+    setAccessLoading(true);
+    (async () => {
+      try {
+        const items = await listAccessUsers();
+        if (!cancelled) setAccessUsers(items);
+      } catch (e) {
+        if (!cancelled) setError(getErrorMessage(e));
+      } finally {
+        if (!cancelled) setAccessLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, isAdmin]);
 
   // UX: user explicitly starts a new analysis (no auto-session on login).
 
@@ -344,11 +401,81 @@ function App() {
     }
   }
 
+  function handleDemoLogin(profile: DemoUserProfile) {
+    setError('');
+    setActiveDemoUser(profile);
+    setUser(createDemoAuthUser(profile));
+    setLoading(false);
+    setActiveView('dashboard');
+    setSidebarOpen(false);
+    setPhase(1);
+    setActiveSession(null);
+    setDescriptionText('');
+    setRequirements([]);
+    setUseCases([]);
+    setPlantuml('');
+    setDiagram(null);
+    setUserStories([]);
+  }
+
   async function handleLogout() {
     setError('');
     showProcessing('Encerrando sessão', 'Saindo da conta atual.', 1, 1);
     try {
-      await signOut(auth);
+      if (isDemoAuthUser(user)) {
+        clearActiveDemoUser();
+        setUser(null);
+        setIsAdmin(false);
+        setAccessRole(null);
+        setSessions([]);
+        setAccessUsers([]);
+        setActiveSession(null);
+        setActiveView('dashboard');
+      } else {
+        await signOut(auth);
+      }
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setProcessing(null);
+    }
+  }
+
+  async function refreshAccessUsers() {
+    if (!isAdmin) return;
+    setAccessLoading(true);
+    try {
+      const items = await listAccessUsers();
+      setAccessUsers(items);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setAccessLoading(false);
+    }
+  }
+
+  async function handleSaveAccessUser() {
+    setError('');
+    showProcessing('Salvando acesso', 'Atualizando nível do Gmail informado.', 1, 2);
+    try {
+      await saveAccessUser(accessEmail, accessRoleDraft);
+      setAccessEmail('');
+      showProcessing('Salvando acesso', 'Recarregando usuários cadastrados.', 2, 2);
+      await refreshAccessUsers();
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setProcessing(null);
+    }
+  }
+
+  async function handleRemoveAccessUser(email: string) {
+    setError('');
+    showProcessing('Removendo acesso', 'Excluindo Gmail da gestão de usuários.', 1, 2);
+    try {
+      await removeAccessUser(email);
+      showProcessing('Removendo acesso', 'Recarregando usuários cadastrados.', 2, 2);
+      await refreshAccessUsers();
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -387,10 +514,10 @@ function App() {
     setError('');
     showProcessing('Abrindo análise', 'Carregando dados salvos da sessão.', 1, 2);
     try {
-      if (isAdmin && item.uid !== user?.uid) {
-        throw new Error('admin_view_other_user_session_not_implemented_yet');
-      }
-      const loaded = await loadMySession(item.id);
+      const loaded =
+        isAdmin && item.uid !== user?.uid
+          ? await loadSession(item.uid, item.id)
+          : await loadMySession(item.id);
       showProcessing('Abrindo análise', 'Restaurando requisitos, casos de uso e diagrama.', 2, 2);
       setActiveSession(loaded);
       setActiveView('workspace');
@@ -414,7 +541,7 @@ function App() {
     setError('');
     showProcessing('Salvando descrição', 'Registrando o texto inicial da análise.', 1, 1);
     try {
-      await updateMySession(activeSession.id, { descriptionText });
+      await updateSession(activeSession.uid, activeSession.id, { descriptionText });
       setActiveSession({ ...activeSession, descriptionText });
     } catch (e) {
       setError(getErrorMessage(e));
@@ -561,7 +688,7 @@ function App() {
       setUserStories([]);
       const requirementsText = JSON.stringify(result.requisitos_funcionais);
       showProcessing('Etapa 1: requisitos funcionais', 'Salvando requisitos na sessão.', 4, 4);
-      await updateMySession(activeSession.id, {
+      await updateSession(activeSession.uid, activeSession.id, {
         descriptionText,
         requirementsText,
         useCasesText: '',
@@ -594,7 +721,7 @@ function App() {
     showProcessing('Validando requisitos', 'Salvando requisitos revisados.', 1, 2);
     try {
       const requirementsText = JSON.stringify(requirements);
-      await updateMySession(activeSession.id, {
+      await updateSession(activeSession.uid, activeSession.id, {
         requirementsText,
         useCasesText: '',
         plantumlText: '',
@@ -636,7 +763,7 @@ function App() {
       setUseCases(normalizedUseCases);
       const useCasesText = JSON.stringify(normalizedUseCases);
       showProcessing('Etapa 2: casos de uso', 'Salvando casos de uso gerados.', 3, 4);
-      await updateMySession(activeSession.id, {
+      await updateSession(activeSession.uid, activeSession.id, {
         useCasesText,
         statusText: 'use_cases_generated',
       });
@@ -658,7 +785,7 @@ function App() {
     try {
       const normalizedUseCases = useCases.map(normalizeUseCase);
       const useCasesText = JSON.stringify(normalizedUseCases);
-      await updateMySession(activeSession.id, {
+      await updateSession(activeSession.uid, activeSession.id, {
         useCasesText,
         statusText: 'use_cases_validated',
       });
@@ -686,7 +813,7 @@ function App() {
       setDiagram(model);
       const diagramModelText = JSON.stringify(model);
       showProcessing('Etapa 3: diagrama', 'Salvando modelo gráfico e PlantUML.', 3, 4);
-      await updateMySession(activeSession.id, {
+      await updateSession(activeSession.uid, activeSession.id, {
         plantumlText: nextPlantuml,
         diagramModelText,
         statusText: 'uml_generated',
@@ -760,7 +887,7 @@ function App() {
         2,
         3,
       );
-      await updateMySession(activeSession.id, {
+      await updateSession(activeSession.uid, activeSession.id, {
         plantumlText: nextPlantuml,
         diagramModelText,
         statusText: nextStatus,
@@ -817,7 +944,7 @@ function App() {
       setUserStories(result.user_stories);
       const userStoriesText = JSON.stringify(result.user_stories);
       showProcessing('Etapa 4: user stories', 'Salvando user stories na sessão.', 4, 4);
-      await updateMySession(activeSession.id, {
+      await updateSession(activeSession.uid, activeSession.id, {
         userStoriesText,
         statusText: 'user_stories_generated',
       });
@@ -926,7 +1053,14 @@ function App() {
             {user ? (
               <>
                 <div className="user-chip text-muted small">
-                  {displayName} {isAdmin ? <strong>(admin)</strong> : <span>(usuário)</span>}
+                  {displayName}{' '}
+                  {isAdmin ? (
+                    <strong>(admin)</strong>
+                  ) : accessRole === 'user' ? (
+                    <span>(usuário)</span>
+                  ) : (
+                    <span>(sem acesso)</span>
+                  )}
                 </div>
                 <Button variant="outline-secondary" onClick={handleLogout} className="auth-action">
                   Sair
@@ -975,6 +1109,16 @@ function App() {
                     Sessões
                   </Nav.Link>
                   <Nav.Link
+                    eventKey="users"
+                    onClick={() => {
+                      setActiveView('users');
+                      setSidebarOpen(false);
+                    }}
+                    disabled={!isAdmin}
+                  >
+                    Gestão de usuários
+                  </Nav.Link>
+                  <Nav.Link
                     eventKey="workspace"
                     onClick={() => {
                       setActiveView('workspace');
@@ -987,7 +1131,9 @@ function App() {
                 </Nav>
                 <hr />
                 <div className="text-muted small">
-                  {isAdmin ? 'Admin vê todas as sessões.' : 'User vê apenas as próprias.'}
+                  {isAdmin
+                    ? 'Admin vê todas as sessões e gerencia usuários.'
+                    : 'User vê apenas as próprias sessões.'}
                 </div>
               </Offcanvas.Body>
             </Offcanvas>
@@ -1114,6 +1260,122 @@ function App() {
                   <Alert variant="secondary">Nenhuma sessão ainda. Clique em “Nova análise”.</Alert>
                 )}
               </>
+            ) : null}
+
+            {activeView === 'users' ? (
+              isAdmin ? (
+                <>
+                  <Stack direction="horizontal" className="mb-3" gap={2}>
+                    <div>
+                      <h5 className="mb-1">Gestão de usuários</h5>
+                      <div className="text-muted small">
+                        Cadastre Gmail e nível de acesso: admin vê todos, user vê só o próprio.
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline-secondary"
+                      className="ms-auto"
+                      onClick={refreshAccessUsers}
+                      disabled={accessLoading}
+                    >
+                      Atualizar
+                    </Button>
+                  </Stack>
+
+                  <Card className="mb-3">
+                    <Card.Body>
+                      <Form
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void handleSaveAccessUser();
+                        }}
+                      >
+                        <Row className="g-2 align-items-end">
+                          <Col md={7}>
+                            <Form.Label>Gmail do usuário</Form.Label>
+                            <Form.Control
+                              type="email"
+                              value={accessEmail}
+                              onChange={(event) => setAccessEmail(event.target.value)}
+                              placeholder="nome@gmail.com"
+                            />
+                          </Col>
+                          <Col md={3}>
+                            <Form.Label>Nível</Form.Label>
+                            <Form.Select
+                              value={accessRoleDraft}
+                              onChange={(event) =>
+                                setAccessRoleDraft(event.target.value as AccessRole)
+                              }
+                            >
+                              <option value="user">user</option>
+                              <option value="admin">admin</option>
+                            </Form.Select>
+                          </Col>
+                          <Col md={2}>
+                            <Button type="submit" className="w-100" disabled={!accessEmail.trim()}>
+                              Salvar
+                            </Button>
+                          </Col>
+                        </Row>
+                      </Form>
+                    </Card.Body>
+                  </Card>
+
+                  {accessLoading ? (
+                    <div className="d-flex align-items-center gap-2 text-muted">
+                      <Spinner size="sm" /> carregando usuários…
+                    </div>
+                  ) : accessUsers.length ? (
+                    <Table bordered hover size="sm" responsive>
+                      <thead>
+                        <tr>
+                          <th>Gmail</th>
+                          <th>Nível</th>
+                          <th>Atualizado</th>
+                          <th>Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {accessUsers.map((item) => (
+                          <tr key={item.email}>
+                            <td>{item.email}</td>
+                            <td>
+                              <Form.Select
+                                size="sm"
+                                value={item.role}
+                                onChange={(event) => {
+                                  void saveAccessUser(
+                                    item.email,
+                                    event.target.value as AccessRole,
+                                  ).then(refreshAccessUsers);
+                                }}
+                              >
+                                <option value="user">user</option>
+                                <option value="admin">admin</option>
+                              </Form.Select>
+                            </td>
+                            <td className="text-muted">{item.updatedAtText || '-'}</td>
+                            <td>
+                              <Button
+                                size="sm"
+                                variant="outline-danger"
+                                onClick={() => handleRemoveAccessUser(item.email)}
+                              >
+                                Remover
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </Table>
+                  ) : (
+                    <Alert variant="secondary">Nenhum Gmail cadastrado ainda.</Alert>
+                  )}
+                </>
+              ) : (
+                <Alert variant="secondary">Apenas admin pode acessar a gestão de usuários.</Alert>
+              )
             ) : null}
 
             {activeView === 'workspace' ? (
@@ -1403,6 +1665,22 @@ function App() {
             <Button onClick={handleLogin} className="signed-out-panel__action">
               Entrar com Google
             </Button>
+            {demoAuthEnabled ? (
+              <div className="demo-login-panel mt-3">
+                <div className="text-muted small mb-2">Acesso demo</div>
+                <Stack direction="horizontal" gap={2} className="flex-wrap">
+                  {DEMO_USERS.map((profile) => (
+                    <Button
+                      key={profile.uid}
+                      variant={profile.admin ? 'outline-primary' : 'outline-secondary'}
+                      onClick={() => handleDemoLogin(profile)}
+                    >
+                      {profile.displayName} ({profile.admin ? 'admin' : 'user'})
+                    </Button>
+                  ))}
+                </Stack>
+              </div>
+            ) : null}
           </section>
         )}
       </Container>

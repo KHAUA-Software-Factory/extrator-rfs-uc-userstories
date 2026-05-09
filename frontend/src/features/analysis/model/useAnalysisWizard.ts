@@ -41,4 +41,3 @@ export function useAnalysisWizard(statusText: string | undefined): AnalysisWizar
     phaseLocked: (target) => isPhaseLocked(statusText, target),
   };
 }
-

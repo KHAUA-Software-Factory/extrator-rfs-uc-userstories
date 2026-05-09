@@ -5,9 +5,6 @@
 #   2) cp github-secrets.env.example github-secrets.env
 #   3) Edite github-secrets.env (não commite)
 #   4) ./scripts/sync-github-secrets.sh
-#
-# JSON do Firebase: prefira FIREBASE_SERVICE_ACCOUNT_JSON_FILE=caminho/arquivo.json
-# no github-secrets.env em vez de colar JSON na linha.
 
 set -euo pipefail
 
@@ -49,7 +46,6 @@ echo "Repositório: $REPO"
 echo "Origem: $ENV_FILE"
 echo
 
-json_file=""
 while IFS= read -r line || [[ -n "$line" ]]; do
   [[ "$line" =~ ^[[:space:]]*# ]] && continue
   [[ -z "${line//[:space:]}" ]] && continue
@@ -57,21 +53,8 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   key="${key%"${key##*[![:space:]]}"}"
   key="${key#"${key%%[![:space:]]*}"}"
   value="${line#*=}"
-  if [[ "$key" == "FIREBASE_SERVICE_ACCOUNT_JSON_FILE" ]]; then
-    json_file="${value//$'\r'/}"
-    continue
-  fi
   set_secret "$key" "$value"
 done < "$ENV_FILE"
-
-if [[ -n "$json_file" ]]; then
-  if [[ ! -f "$json_file" ]]; then
-    echo "Arquivo JSON não encontrado: $json_file (FIREBASE_SERVICE_ACCOUNT_JSON_FILE)"
-    exit 1
-  fi
-  gh secret set FIREBASE_SERVICE_ACCOUNT_JSON --repo "$REPO" <"$json_file"
-  echo "  (ok) FIREBASE_SERVICE_ACCOUNT_JSON (de $json_file)"
-fi
 
 echo
 echo "Concluído. Verifique: gh secret list"
