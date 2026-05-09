@@ -19,11 +19,15 @@ concurrency:
 
 jobs:
   deploy:
-    name: ms.khaua.com.br
+    name: khaua.com.br/ms
     runs-on: ubuntu-latest
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      NODE_VERSION: 22
+      FRONTEND_PUBLIC_PATH: /ms/
+      FRONTEND_API_BASE_URL: /ms-app
+      FRONTEND_REMOTE_DIR: public_html/ms
 
     defaults:
       run:
@@ -36,7 +40,7 @@ jobs:
       - name: Configurar Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Criar .env.production
         run: |
@@ -45,7 +49,8 @@ jobs:
           echo "VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}" >> .env.production
           echo "VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}" >> .env.production
           echo "VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}" >> .env.production
-          echo "VITE_API_BASE_URL=https://ms-app.khaua.com.br" >> .env.production
+          echo "VITE_API_BASE_URL=${FRONTEND_API_BASE_URL}" >> .env.production
+          echo "VITE_BASE_PATH=${FRONTEND_PUBLIC_PATH}" >> .env.production
 
       - name: Instalar dependências
         run: npm ci
@@ -66,5 +71,5 @@ jobs:
           user: ${{ secrets.USER }}
           password: ${{ secrets.PASS }}
           localDir: frontend/dist
-          remoteDir: public_html/ms
+          remoteDir: ${{ env.FRONTEND_REMOTE_DIR }}
           forceSsl: false

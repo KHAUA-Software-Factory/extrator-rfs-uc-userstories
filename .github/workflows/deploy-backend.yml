@@ -19,11 +19,14 @@ concurrency:
 
 jobs:
   deploy:
-    name: ms-app.khaua.com.br
+    name: khaua.com.br/ms-app
     runs-on: ubuntu-latest
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      NODE_VERSION: 22
+      BACKEND_PUBLIC_PATH: /ms-app
+      BACKEND_REMOTE_DIR: public_html/ms-app
 
     defaults:
       run:
@@ -36,7 +39,7 @@ jobs:
       - name: Configurar Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Instalar dependências
         run: npm ci
@@ -79,15 +82,15 @@ jobs:
       - name: Criar .htaccess de produção
         env:
           FTP_USER: ${{ secrets.USER }}
-          BACKEND_APP_ROOT: ${{ secrets.BACKEND_APP_ROOT }}
-          BACKEND_BASE_URI: ${{ secrets.BACKEND_BASE_URI }}
-          BACKEND_NODE_PATH: ${{ secrets.BACKEND_NODE_PATH }}
+          BACKEND_APP_ROOT_OVERRIDE: ${{ secrets.BACKEND_APP_ROOT }}
+          BACKEND_BASE_URI_OVERRIDE: ${{ secrets.BACKEND_BASE_URI }}
+          BACKEND_NODE_PATH_OVERRIDE: ${{ secrets.BACKEND_NODE_PATH }}
         run: |
-          app_root="${BACKEND_APP_ROOT:-/home/${FTP_USER}/public_html/ms-app}"
-          base_uri="${BACKEND_BASE_URI:-/}"
-          node_path="${BACKEND_NODE_PATH:-/home/${FTP_USER}/nodevenv/public_html/ms-app/22/bin/node}"
+          app_root="${BACKEND_APP_ROOT_OVERRIDE:-/home/${FTP_USER}/${BACKEND_REMOTE_DIR}}"
+          base_uri="${BACKEND_BASE_URI_OVERRIDE:-${BACKEND_PUBLIC_PATH}}"
+          node_path="${BACKEND_NODE_PATH_OVERRIDE:-/home/${FTP_USER}/nodevenv/${BACKEND_REMOTE_DIR}/${NODE_VERSION}/bin/node}"
 
-          if [ -z "$FTP_USER" ] && { [ -z "$BACKEND_APP_ROOT" ] || [ -z "$BACKEND_NODE_PATH" ]; }; then
+          if [ -z "$FTP_USER" ] && { [ -z "$BACKEND_APP_ROOT_OVERRIDE" ] || [ -z "$BACKEND_NODE_PATH_OVERRIDE" ]; }; then
             echo "Defina USER ou defina BACKEND_APP_ROOT e BACKEND_NODE_PATH."
             exit 1
           fi
@@ -121,7 +124,7 @@ jobs:
           user: ${{ secrets.USER }}
           password: ${{ secrets.PASS }}
           localDir: backend
-          remoteDir: public_html/ms-app
+          remoteDir: ${{ env.BACKEND_REMOTE_DIR }}
           forceSsl: false
           options: >-
             --exclude-glob node_modules
