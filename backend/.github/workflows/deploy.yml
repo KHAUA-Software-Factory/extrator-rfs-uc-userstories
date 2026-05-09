@@ -146,7 +146,7 @@ jobs:
           password: ${{ secrets.PASS }}
           localDir: ${{ env.BACKEND_ARTIFACT_DIR }}/app
           remoteDir: ${{ env.BACKEND_APP_REMOTE_DIR }}
-          forceSsl: true
+          forceSsl: false
           options: >-
             --exclude-glob coverage
             --exclude-glob coverage/**
@@ -163,7 +163,7 @@ jobs:
           password: ${{ secrets.PASS }}
           localDir: ${{ env.BACKEND_ARTIFACT_DIR }}/public
           remoteDir: ${{ env.BACKEND_PUBLIC_REMOTE_DIR }}
-          forceSsl: true
+          forceSsl: false
           options: >-
             --exclude-glob coverage
             --exclude-glob coverage/**

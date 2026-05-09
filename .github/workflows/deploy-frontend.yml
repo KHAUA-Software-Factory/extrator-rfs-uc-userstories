@@ -75,4 +75,4 @@ jobs:
           password: ${{ secrets.PASS }}
           localDir: frontend/dist
           remoteDir: ${{ env.FRONTEND_REMOTE_DIR }}
-          forceSsl: true
+          forceSsl: false
