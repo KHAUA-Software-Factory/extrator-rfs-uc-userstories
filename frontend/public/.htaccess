@@ -1,5 +1,7 @@
 # Force HTTPS for the static frontend on Apache/Locaweb.
 RewriteEngine On
+RewriteRule ^__path\.php$ - [R=404,L]
+
 RewriteCond %{HTTPS} !=on
 RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]

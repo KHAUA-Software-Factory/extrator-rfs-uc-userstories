@@ -73,6 +73,8 @@ type ProcessingState = {
   total: number;
 };
 
+const AUTH_STARTUP_FALLBACK_MS = 2500;
+
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Rascunho',
   requirements_generated: 'Requisitos gerados',
@@ -199,24 +201,45 @@ function App() {
   const wizard = useAnalysisWizard(activeSession?.statusText);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setLoading(false);
-      if (u) {
-        // Always land on the dashboard after login (no auto-open workspace).
-        setActiveView('dashboard');
-        setSidebarOpen(false);
-        setPhase(1);
-        setActiveSession(null);
-        setDescriptionText('');
-        setRequirements([]);
-        setUseCases([]);
-        setPlantuml('');
-        setDiagram(null);
-        setUserStories([]);
-        setError('');
-      }
-    });
+    let authStateResolved = false;
+    const fallbackTimer = window.setTimeout(() => {
+      if (!authStateResolved) setLoading(false);
+    }, AUTH_STARTUP_FALLBACK_MS);
+
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (u) => {
+        authStateResolved = true;
+        window.clearTimeout(fallbackTimer);
+        setUser(u);
+        setLoading(false);
+        if (u) {
+          // Always land on the dashboard after login (no auto-open workspace).
+          setActiveView('dashboard');
+          setSidebarOpen(false);
+          setPhase(1);
+          setActiveSession(null);
+          setDescriptionText('');
+          setRequirements([]);
+          setUseCases([]);
+          setPlantuml('');
+          setDiagram(null);
+          setUserStories([]);
+          setError('');
+        }
+      },
+      (authError) => {
+        authStateResolved = true;
+        window.clearTimeout(fallbackTimer);
+        setError(`Falha ao inicializar o login: ${authError.message}`);
+        setLoading(false);
+      },
+    );
+
+    return () => {
+      window.clearTimeout(fallbackTimer);
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
