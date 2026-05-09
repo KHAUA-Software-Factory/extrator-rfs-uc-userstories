@@ -26,8 +26,9 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       NODE_VERSION: 22
       BACKEND_PUBLIC_PATH: /
-      BACKEND_REMOTE_DIR: public_html/ms-app
-      BACKEND_APP_ROOT: /home/storage/b/50/72/khaua1/public_html/ms-app
+      BACKEND_PUBLIC_REMOTE_DIR: public_html/ms-app
+      BACKEND_APP_REMOTE_DIR: nodeapps/ms-app
+      BACKEND_APP_ROOT: /home/storage/b/50/72/khaua1/nodeapps/ms-app
       BACKEND_NODE_BIN: ''
       BACKEND_ARTIFACT_DIR: deploy
 
@@ -104,14 +105,15 @@ jobs:
           fi
 
           rm -rf "$BACKEND_ARTIFACT_DIR"
-          mkdir -p "$BACKEND_ARTIFACT_DIR/tmp"
-          cp dist/index.cjs "$BACKEND_ARTIFACT_DIR/index.js"
-          cp .env service-account.json "$BACKEND_ARTIFACT_DIR/"
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > "$BACKEND_ARTIFACT_DIR/tmp/restart.txt"
+          mkdir -p "$BACKEND_ARTIFACT_DIR/app/tmp" "$BACKEND_ARTIFACT_DIR/public"
+          cp dist/index.cjs "$BACKEND_ARTIFACT_DIR/app/index.js"
+          cp .env service-account.json "$BACKEND_ARTIFACT_DIR/app/"
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > "$BACKEND_ARTIFACT_DIR/app/tmp/restart.txt"
 
           {
             echo "# Gerado pelo GitHub Actions para Locaweb/cPanel + Passenger."
             echo "RewriteEngine On"
+            echo "RewriteRule ^(\\.env|service-account\\.json|index\\.js|package(-lock)?\\.json)$ - [F,L]"
             echo "RewriteCond %{HTTPS} !=on"
             echo "RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]"
             echo "RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]"
@@ -128,16 +130,33 @@ jobs:
             echo "# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END"
             echo ""
             echo "DirectoryIndex disabled"
-          } > "$BACKEND_ARTIFACT_DIR/.htaccess"
+          } > "$BACKEND_ARTIFACT_DIR/public/.htaccess"
 
-      - name: FTP Deploy Locaweb
+      - name: FTP Deploy Node app
         uses: locaweb/ftp-deploy@1.0.0
         with:
           host: ${{ secrets.HOST }}
           user: ${{ secrets.USER }}
           password: ${{ secrets.PASS }}
-          localDir: backend/${{ env.BACKEND_ARTIFACT_DIR }}
-          remoteDir: ${{ env.BACKEND_REMOTE_DIR }}
+          localDir: backend/${{ env.BACKEND_ARTIFACT_DIR }}/app
+          remoteDir: ${{ env.BACKEND_APP_REMOTE_DIR }}
+          forceSsl: false
+          options: >-
+            --exclude-glob coverage
+            --exclude-glob coverage/**
+            --exclude-glob .github
+            --exclude-glob .github/**
+            --exclude-glob *.log
+            --exclude-glob npm-debug.log*
+
+      - name: FTP Deploy public bridge
+        uses: locaweb/ftp-deploy@1.0.0
+        with:
+          host: ${{ secrets.HOST }}
+          user: ${{ secrets.USER }}
+          password: ${{ secrets.PASS }}
+          localDir: backend/${{ env.BACKEND_ARTIFACT_DIR }}/public
+          remoteDir: ${{ env.BACKEND_PUBLIC_REMOTE_DIR }}
           forceSsl: false
           options: >-
             --exclude-glob coverage
