@@ -1,14 +1,1 @@
-.DS_Store
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-.venv/
-venv/
-env/
-.env
-outputs/
-*.zip
-
-# Scripts antigos de exploracao (mantidos para historico local).
-Test/
+github-secrets.env
