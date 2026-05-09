@@ -27,7 +27,7 @@ jobs:
       BACKEND_PUBLIC_REMOTE_DIR: public_html/ms-app
       BACKEND_APP_REMOTE_DIR: nodeapps/ms-app
       BACKEND_APP_ROOT: /home/storage/b/50/72/khaua1/nodeapps/ms-app
-      BACKEND_NODE_BIN: ''
+      BACKEND_NODE_BIN: /opt/cpanel/ea-nodejs20/bin/node
       BACKEND_ARTIFACT_DIR: deploy
 
     steps:
@@ -120,7 +120,6 @@ jobs:
             fi
             echo "PassengerAppType node"
             echo "PassengerStartupFile index.js"
-            echo "PassengerAppEnv production"
             echo "# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END"
             echo ""
             echo "DirectoryIndex disabled"
