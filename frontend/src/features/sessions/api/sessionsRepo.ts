@@ -1,9 +1,8 @@
-import { apiFetch } from '../../../shared/api/apiFetch';
+import { apiFetch, readApiJson } from '../../../shared/api/apiFetch';
 import type { SessionDoc, SessionListItem, SessionLoaded } from '../model/types';
 
 async function readJson<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(await res.text());
-  return res.json() as Promise<T>;
+  return readApiJson(res);
 }
 
 export async function createSession(): Promise<{ id: string; uid: string }> {

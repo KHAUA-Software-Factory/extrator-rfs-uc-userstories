@@ -91,6 +91,10 @@ function getStatusLabel(statusText: string | undefined) {
   return STATUS_LABELS[status] || status;
 }
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function readDiagramFromSession(session: SessionLoaded): DiagramModel | null {
   if (session.diagramModelText) {
     try {
@@ -255,7 +259,7 @@ function App() {
         const tokenResult = await user.getIdTokenResult();
         if (!cancelled) setIsAdmin(tokenResult.claims.admin === true);
       } catch (e) {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) setError(getErrorMessage(e));
       }
     })();
     return () => {
@@ -279,7 +283,7 @@ function App() {
         const items = isAdmin ? await listAllSessionsAsAdmin() : await listMySessions();
         if (!cancelled) setSessions(items);
       } catch (e) {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) setError(getErrorMessage(e));
       } finally {
         if (!cancelled) setSessionsLoading(false);
       }
@@ -334,7 +338,7 @@ function App() {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (e) {
-      setError(String(e));
+      setError(getErrorMessage(e));
     } finally {
       setProcessing(null);
     }
@@ -346,7 +350,7 @@ function App() {
     try {
       await signOut(auth);
     } catch (e) {
-      setError(String(e));
+      setError(getErrorMessage(e));
     } finally {
       setProcessing(null);
     }
@@ -373,7 +377,7 @@ function App() {
       const items = isAdmin ? await listAllSessionsAsAdmin() : await listMySessions();
       setSessions(items);
     } catch (e) {
-      setError(String(e));
+      setError(getErrorMessage(e));
     } finally {
       setProcessing(null);
     }
@@ -399,7 +403,7 @@ function App() {
       setUserStories(loaded.userStoriesText ? JSON.parse(loaded.userStoriesText) : []);
       setPhase(getRecommendedPhase(loaded.statusText));
     } catch (e) {
-      setError(String(e));
+      setError(getErrorMessage(e));
     } finally {
       setProcessing(null);
     }
@@ -413,7 +417,7 @@ function App() {
       await updateMySession(activeSession.id, { descriptionText });
       setActiveSession({ ...activeSession, descriptionText });
     } catch (e) {
-      setError(String(e));
+      setError(getErrorMessage(e));
     } finally {
       setProcessing(null);
     }
@@ -577,7 +581,7 @@ function App() {
         statusText: 'requirements_generated',
       });
     } catch (e) {
-      setError(String(e));
+      setError(getErrorMessage(e));
     } finally {
       setExtracting(false);
       setProcessing(null);
@@ -614,7 +618,7 @@ function App() {
       });
       setPhase(2);
     } catch (e) {
-      setError(String(e));
+      setError(getErrorMessage(e));
     } finally {
       setProcessing(null);
     }
@@ -640,7 +644,7 @@ function App() {
       setActiveSession({ ...activeSession, useCasesText, statusText: 'use_cases_generated' });
       setPhase(2);
     } catch (e) {
-      setError(String(e));
+      setError(getErrorMessage(e));
     } finally {
       setGeneratingUseCases(false);
       setProcessing(null);
@@ -663,7 +667,7 @@ function App() {
       setActiveSession({ ...activeSession, useCasesText, statusText: 'use_cases_validated' });
       setPhase(3);
     } catch (e) {
-      setError(String(e));
+      setError(getErrorMessage(e));
     } finally {
       setProcessing(null);
     }
@@ -696,7 +700,7 @@ function App() {
       });
       setPhase(3);
     } catch (e) {
-      setError(String(e));
+      setError(getErrorMessage(e));
     } finally {
       setGeneratingUml(false);
       setProcessing(null);
@@ -779,7 +783,7 @@ function App() {
         statusText: nextStatus,
       });
     } catch (e) {
-      setError(String(e));
+      setError(getErrorMessage(e));
     } finally {
       setSavingDiagram(false);
       setProcessing(null);
@@ -820,7 +824,7 @@ function App() {
       setActiveSession({ ...activeSession, userStoriesText, statusText: 'user_stories_generated' });
       setPhase(4);
     } catch (e) {
-      setError(String(e));
+      setError(getErrorMessage(e));
     } finally {
       setGeneratingStories(false);
       setProcessing(null);

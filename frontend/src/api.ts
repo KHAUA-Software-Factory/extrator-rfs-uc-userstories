@@ -1,10 +1,9 @@
-import { apiFetch } from './shared/api/apiFetch';
+import { apiFetch, readApiJson } from './shared/api/apiFetch';
 import type { FunctionalRequirement, UseCase, UserStory } from './features/analysis/model/types';
 
 export async function ensureClaims(): Promise<{ ok: boolean; admin: boolean; updated?: boolean }> {
   const res = await apiFetch('/api/auth/ensure-claims', { method: 'POST', body: '{}' });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  return readApiJson(res);
 }
 
 export type { FunctionalRequirement, UseCase, UserStory };
@@ -16,8 +15,7 @@ export async function extractRequirements(input: {
     method: 'POST',
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  return readApiJson(res);
 }
 
 export async function generateUseCases(input: {
@@ -27,8 +25,7 @@ export async function generateUseCases(input: {
     method: 'POST',
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  return readApiJson(res);
 }
 
 export async function generateUml(input: {
@@ -40,8 +37,7 @@ export async function generateUml(input: {
     method: 'POST',
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  return readApiJson(res);
 }
 
 export async function generateUserStories(input: { plantuml: string }): Promise<{ user_stories: UserStory[] }> {
@@ -49,6 +45,5 @@ export async function generateUserStories(input: { plantuml: string }): Promise<
     method: 'POST',
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  return readApiJson(res);
 }
