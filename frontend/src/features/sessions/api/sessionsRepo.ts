@@ -3,6 +3,7 @@ import {
   addDoc,
   collection,
   collectionGroup,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -28,6 +29,13 @@ const SESSION_FIELDS = [
   'statusText',
 ] as const satisfies readonly (keyof SessionDoc)[];
 
+const GENERIC_TITLES = new Set([
+  'nova analise',
+  'nova sessao',
+  'sem titulo',
+  'analise de requisitos',
+]);
+
 function requireCurrentUser(): User {
   const user = auth.currentUser;
   if (!user) throw new Error('Usuario nao autenticado.');
@@ -41,7 +49,7 @@ function nowText() {
 function sessionDefaults(): SessionDoc {
   const now = nowText();
   return {
-    title: 'Nova sessao',
+    title: 'Nova analise',
     descriptionText: '',
     requirementsText: '',
     useCasesText: '',
@@ -52,6 +60,40 @@ function sessionDefaults(): SessionDoc {
     createdAtText: now,
     updatedAtText: now,
   };
+}
+
+function normalizeTitleText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function isGenericTitle(title: string) {
+  return !title.trim() || GENERIC_TITLES.has(normalizeTitleText(title));
+}
+
+export function buildSessionTitleFromDescription(descriptionText: string) {
+  const clean = descriptionText.replace(/\s+/g, ' ').trim();
+  if (!clean) return 'Nova analise';
+
+  const firstIdea = clean.split(/[.!?\n]/)[0]?.trim() || clean;
+  const withoutPrefix = firstIdea.replace(
+    /^(sistema|projeto|aplicacao|aplicação)\s*[:\-–]\s*/i,
+    '',
+  );
+  const title = (withoutPrefix || firstIdea).trim();
+  return title.length > 72 ? `${title.slice(0, 69).trim()}...` : title;
+}
+
+function resolveSessionTitle(data: DocumentData) {
+  const title = readString(data, 'title');
+  const descriptionText = readString(data, 'descriptionText');
+  if (isGenericTitle(title) && descriptionText.trim()) {
+    return buildSessionTitleFromDescription(descriptionText);
+  }
+  return title || buildSessionTitleFromDescription(descriptionText);
 }
 
 function sessionsCollection(uid: string) {
@@ -78,9 +120,10 @@ function mapSessionListItem(
   return {
     id: snapshot.id,
     uid: getSessionUid(snapshot.ref) || fallbackUid,
-    title: readString(data, 'title'),
+    title: resolveSessionTitle(data),
     statusText: readString(data, 'statusText'),
     updatedAtText: readString(data, 'updatedAtText'),
+    hasUserStories: Boolean(readString(data, 'userStoriesText').trim()),
   };
 }
 
@@ -88,7 +131,7 @@ function mapLoadedSession(uid: string, id: string, data: DocumentData): SessionL
   return {
     id,
     uid,
-    title: readString(data, 'title'),
+    title: resolveSessionTitle(data),
     descriptionText: readString(data, 'descriptionText'),
     requirementsText: readString(data, 'requirementsText'),
     useCasesText: readString(data, 'useCasesText'),
@@ -142,6 +185,10 @@ export async function updateSession(
     updatedAtText: nowText(),
   };
   await updateDoc(sessionDocument(uid, sessionId), payload);
+}
+
+export async function deleteSession(uid: string, sessionId: string): Promise<void> {
+  await deleteDoc(sessionDocument(uid, sessionId));
 }
 
 export async function updateMySession(

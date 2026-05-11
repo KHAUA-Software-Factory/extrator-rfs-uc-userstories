@@ -7,7 +7,7 @@ export type AnalysisWizard = {
 
 export function getRecommendedPhase(statusText: string | undefined): PhaseId {
   const status = String(statusText || '');
-  if (status === 'uml_validated' || status === 'user_stories_generated') return 4;
+  if (status === 'uml_validated' || status === 'user_stories_generated' || status === 'extraction_finished') return 4;
   if (status === 'use_cases_validated' || status === 'uml_generated') return 3;
   if (status === 'requirements_validated' || status === 'use_cases_generated') return 2;
   return 1;
@@ -23,16 +23,22 @@ export function isPhaseLocked(statusText: string | undefined, target: PhaseId): 
       status !== 'use_cases_validated' &&
       status !== 'uml_generated' &&
       status !== 'uml_validated' &&
-      status !== 'user_stories_generated'
+      status !== 'user_stories_generated' &&
+      status !== 'extraction_finished'
     );
   if (target === 3)
     return (
       status !== 'use_cases_validated' &&
       status !== 'uml_generated' &&
       status !== 'uml_validated' &&
-      status !== 'user_stories_generated'
+      status !== 'user_stories_generated' &&
+      status !== 'extraction_finished'
     );
-  return status !== 'uml_validated' && status !== 'user_stories_generated';
+  return (
+    status !== 'uml_validated' &&
+    status !== 'user_stories_generated' &&
+    status !== 'extraction_finished'
+  );
 }
 
 export function useAnalysisWizard(statusText: string | undefined): AnalysisWizard {

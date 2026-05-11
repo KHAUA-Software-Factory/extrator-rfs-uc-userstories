@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import Container from 'react-bootstrap/Container';
 import Button from 'react-bootstrap/Button';
 import Navbar from 'react-bootstrap/Navbar';
@@ -25,7 +25,9 @@ import {
   type UserStory,
 } from './api';
 import {
+  buildSessionTitleFromDescription,
   createSession,
+  deleteSession,
   loadSession,
   listAllSessionsAsAdmin,
   listMySessions,
@@ -103,6 +105,7 @@ const STATUS_LABELS: Record<string, string> = {
   uml_generated: 'Diagrama gerado',
   uml_validated: 'Diagrama validado',
   user_stories_generated: 'User stories geradas',
+  extraction_finished: 'Extração finalizada',
 };
 
 function getStatusLabel(statusText: string | undefined) {
@@ -476,6 +479,22 @@ function App() {
     setProcessing({ title, detail, step, total });
   }
 
+  async function refreshSessionsList() {
+    if (!accessRole) return;
+    const items = accessRole === 'admin' ? await listAllSessionsAsAdmin() : await listMySessions();
+    setSessions(items);
+  }
+
+  function parseSavedArray<T>(value: string): T[] {
+    if (!value.trim()) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? (parsed as T[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
   const relationRows = useMemo(() => {
     if (!diagram) return [];
     const nodeNameById = new Map(
@@ -600,8 +619,7 @@ function App() {
       setDiagram(null);
       setUserStories([]);
       showProcessing('Criando análise', 'Atualizando a lista de análises.', 3, 3);
-      const items = isAdmin ? await listAllSessionsAsAdmin() : await listMySessions();
-      setSessions(items);
+      await refreshSessionsList();
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -640,12 +658,14 @@ function App() {
   async function handleSaveDescription() {
     const session = activeSession;
     if (!session) return;
+    const nextTitle = buildSessionTitleFromDescription(descriptionText);
     setError('');
     showProcessing('Salvando descrição', 'Registrando o texto inicial da análise.', 1, 1);
     try {
-      await updateSession(session.uid, session.id, { descriptionText });
+      await updateSession(session.uid, session.id, { title: nextTitle, descriptionText });
       if (!isCurrentSession(session)) return;
-      setActiveSession({ ...session, descriptionText });
+      setActiveSession({ ...session, title: nextTitle, descriptionText });
+      await refreshSessionsList();
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -772,8 +792,9 @@ function App() {
   async function handleExtractRequirements() {
     const session = activeSession;
     if (!session) return;
-    const project = getAiProjectScope(session);
     const sourceDescription = descriptionText;
+    const nextTitle = buildSessionTitleFromDescription(sourceDescription);
+    const project = { ...getAiProjectScope(session), projectTitle: nextTitle };
     setError('');
     setExtracting(true);
     showProcessing('Etapa 1: requisitos funcionais', 'Preparando o texto para análise.', 1, 4);
@@ -798,6 +819,7 @@ function App() {
       const requirementsText = JSON.stringify(result.requisitos_funcionais);
       showProcessing('Etapa 1: requisitos funcionais', 'Salvando requisitos na sessão.', 4, 4);
       await updateSession(session.uid, session.id, {
+        title: nextTitle,
         descriptionText: sourceDescription,
         requirementsText,
         useCasesText: '',
@@ -809,6 +831,7 @@ function App() {
       if (!isCurrentSession(session)) return;
       setActiveSession({
         ...session,
+        title: nextTitle,
         descriptionText: sourceDescription,
         requirementsText,
         useCasesText: '',
@@ -817,6 +840,7 @@ function App() {
         userStoriesText: '',
         statusText: 'requirements_generated',
       });
+      await refreshSessionsList();
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -1131,6 +1155,94 @@ function App() {
     }
   }
 
+  async function handleExportSessionPdf(
+    item: SessionListItem,
+    event?: MouseEvent<HTMLElement>,
+  ) {
+    event?.stopPropagation();
+    if (!item.hasUserStories) return;
+
+    setError('');
+    showProcessing('Gerando PDF', 'Carregando análise salva.', 1, 2);
+    try {
+      const loaded =
+        isAdmin && item.uid !== user?.uid
+          ? await loadSession(item.uid, item.id)
+          : await loadMySession(item.id);
+      const loadedRequirements = parseSavedArray<FunctionalRequirement>(loaded.requirementsText);
+      const loadedUseCases = parseSavedArray<UseCase>(loaded.useCasesText).map(normalizeUseCase);
+      const loadedUserStories = parseSavedArray<UserStory>(loaded.userStoriesText);
+
+      showProcessing('Gerando PDF', 'Montando relatório para download.', 2, 2);
+      await exportAnalysisPdf({
+        title: loaded.title || item.title || 'Analise de requisitos',
+        statusLabel: getStatusLabel(loaded.statusText),
+        descriptionText: loaded.descriptionText,
+        requirements: loadedRequirements,
+        useCases: loadedUseCases,
+        diagram: readDiagramFromSession(loaded),
+        userStories: loadedUserStories,
+        filename: `${slugFileName(loaded.title || item.title || 'relatorio')}.pdf`,
+      });
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setProcessing(null);
+    }
+  }
+
+  async function handleDeleteSession(
+    item: SessionListItem,
+    event?: MouseEvent<HTMLElement>,
+  ) {
+    event?.stopPropagation();
+    const title = item.title || 'esta análise';
+    if (!window.confirm(`Excluir "${title}"? Esta ação não pode ser desfeita.`)) return;
+
+    clearDiagramAutosaveTimer();
+    setError('');
+    showProcessing('Excluindo análise', 'Removendo sessão do Firestore.', 1, 2);
+    try {
+      await deleteSession(item.uid, item.id);
+      if (activeSession?.uid === item.uid && activeSession.id === item.id) {
+        setActiveSession(null);
+        setActiveView('dashboard');
+        setPhase(1);
+        setDescriptionText('');
+        setRequirements([]);
+        setUseCases([]);
+        setPlantuml('');
+        setDiagram(null);
+        setUserStories([]);
+      }
+      showProcessing('Excluindo análise', 'Atualizando lista de análises.', 2, 2);
+      await refreshSessionsList();
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setProcessing(null);
+    }
+  }
+
+  async function handleFinishExtraction() {
+    const session = activeSession;
+    if (!session || !userStories.length) return;
+
+    setError('');
+    showProcessing('Finalizando extração', 'Marcando a análise como finalizada.', 1, 2);
+    try {
+      await updateSession(session.uid, session.id, { statusText: 'extraction_finished' });
+      if (!isCurrentSession(session)) return;
+      setActiveSession({ ...session, statusText: 'extraction_finished' });
+      showProcessing('Finalizando extração', 'Atualizando lista de análises.', 2, 2);
+      await refreshSessionsList();
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setProcessing(null);
+    }
+  }
+
   function buildEdgeFromConnection(connection: Connection) {
     if (!connection.source || !connection.target) return null;
 
@@ -1350,13 +1462,29 @@ function App() {
                                       </div>
                                     </div>
                                   </div>
-                                  <div className="mt-2 d-flex gap-2">
+                                  <div className="mt-2 d-flex flex-wrap gap-2">
                                     <Button
                                       size="sm"
                                       variant="outline-primary"
                                       onClick={() => handleSelectSession(s)}
                                     >
                                       Editar
+                                    </Button>
+                                    {s.hasUserStories ? (
+                                      <Button
+                                        size="sm"
+                                        variant="outline-success"
+                                        onClick={(event) => handleExportSessionPdf(s, event)}
+                                      >
+                                        PDF
+                                      </Button>
+                                    ) : null}
+                                    <Button
+                                      size="sm"
+                                      variant="outline-danger"
+                                      onClick={(event) => handleDeleteSession(s, event)}
+                                    >
+                                      Excluir
                                     </Button>
                                   </div>
                                 </Card.Body>
@@ -1407,6 +1535,7 @@ function App() {
                         <th>Título</th>
                         <th>Status</th>
                         <th>Atualizado</th>
+                        <th>Ações</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1421,6 +1550,36 @@ function App() {
                           <td>{s.title}</td>
                           <td className="text-muted">{getStatusLabel(s.statusText)}</td>
                           <td className="text-muted">{s.updatedAtText}</td>
+                          <td>
+                            <Stack direction="horizontal" gap={2}>
+                              <Button
+                                size="sm"
+                                variant="outline-primary"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleSelectSession(s);
+                                }}
+                              >
+                                Editar
+                              </Button>
+                              {s.hasUserStories ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline-success"
+                                  onClick={(event) => handleExportSessionPdf(s, event)}
+                                >
+                                  PDF
+                                </Button>
+                              ) : null}
+                              <Button
+                                size="sm"
+                                variant="outline-danger"
+                                onClick={(event) => handleDeleteSession(s, event)}
+                              >
+                                Excluir
+                              </Button>
+                            </Stack>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1895,6 +2054,7 @@ function App() {
                     userStories={userStories}
                     onGenerate={handleGenerateUserStories}
                     onExportPdf={handleExportPdf}
+                    onFinishExtraction={handleFinishExtraction}
                   />
 
                   <AnalysisReport

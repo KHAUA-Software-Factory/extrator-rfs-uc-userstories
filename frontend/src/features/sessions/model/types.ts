@@ -17,6 +17,7 @@ export type SessionListItem = {
   title: string;
   statusText: string;
   updatedAtText: string;
+  hasUserStories: boolean;
 };
 
 export type SessionLoaded = SessionDoc & { id: string; uid: string };

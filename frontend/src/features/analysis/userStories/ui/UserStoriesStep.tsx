@@ -14,6 +14,7 @@ type Props = {
   userStories: UserStory[];
   onGenerate: () => void;
   onExportPdf: () => void;
+  onFinishExtraction: () => void;
 };
 
 export function UserStoriesStep(props: Props) {
@@ -26,12 +27,14 @@ export function UserStoriesStep(props: Props) {
     userStories,
     onGenerate,
     onExportPdf,
+    onFinishExtraction,
   } = props;
 
   if (phase !== 4) return null;
 
   const canGenerate = Boolean(plantuml.trim()) && statusText === 'uml_validated';
   const hasUserStories = userStories.length > 0;
+  const isFinished = statusText === 'extraction_finished';
 
   return (
     <>
@@ -53,36 +56,47 @@ export function UserStoriesStep(props: Props) {
       </Stack>
 
       {userStories.length ? (
-        <Table bordered size="sm" responsive>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Papel</th>
-              <th>Quero</th>
-              <th>Para</th>
-              <th>Critérios</th>
-              <th>UC(s)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {userStories.map((s) => (
-              <tr key={s.id}>
-                <td className="text-muted">{s.id}</td>
-                <td>{s.papel}</td>
-                <td>{s.quero}</td>
-                <td>{s.para}</td>
-                <td>
-                  <ul className="mb-0">
-                    {(s.criterios_de_aceitacao || []).map((c, idx) => (
-                      <li key={idx}>{c}</li>
-                    ))}
-                  </ul>
-                </td>
-                <td className="text-muted">{(s.casos_de_uso_relacionados || []).join(', ')}</td>
+        <>
+          <Table bordered size="sm" responsive>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Papel</th>
+                <th>Quero</th>
+                <th>Para</th>
+                <th>Critérios</th>
+                <th>UC(s)</th>
               </tr>
-            ))}
-          </tbody>
-        </Table>
+            </thead>
+            <tbody>
+              {userStories.map((s) => (
+                <tr key={s.id}>
+                  <td className="text-muted">{s.id}</td>
+                  <td>{s.papel}</td>
+                  <td>{s.quero}</td>
+                  <td>{s.para}</td>
+                  <td>
+                    <ul className="mb-0">
+                      {(s.criterios_de_aceitacao || []).map((c, idx) => (
+                        <li key={idx}>{c}</li>
+                      ))}
+                    </ul>
+                  </td>
+                  <td className="text-muted">{(s.casos_de_uso_relacionados || []).join(', ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          <Stack direction="horizontal" gap={2} className="justify-content-end mt-3">
+            <Button
+              variant={isFinished ? 'outline-success' : 'primary'}
+              onClick={onFinishExtraction}
+              disabled={isFinished}
+            >
+              {isFinished ? 'Extração finalizada' : 'Finalizar extração'}
+            </Button>
+          </Stack>
+        </>
       ) : (
         <Alert variant="secondary">Valide o diagrama (Etapa 3) para liberar a geração.</Alert>
       )}
