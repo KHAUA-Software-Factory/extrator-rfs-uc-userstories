@@ -41,6 +41,9 @@ export function RequirementsStep(props: Props) {
 
   if (phase !== 1) return null;
 
+  const hasDescription = Boolean(descriptionText.trim());
+  const hasRequirements = requirements.length > 0;
+
   return (
     <>
       <h5 className="mb-3">Etapa 1 – Requisitos (IA)</h5>
@@ -58,24 +61,21 @@ export function RequirementsStep(props: Props) {
           </Col>
           <Col md={12}>
             <Stack direction="horizontal" gap={2} className="action-bar">
-              <Button type="button" variant="outline-secondary" onClick={onSaveDescription}>
-                Salvar descrição
-              </Button>
-              <Button
-                type="button"
-                onClick={onExtract}
-                disabled={!descriptionText.trim() || extracting}
-              >
-                {extracting ? 'Extraindo…' : 'Extrair requisitos com IA'}
-              </Button>
-              <Button
-                type="button"
-                variant="success"
-                onClick={onValidate}
-                disabled={!requirements.length}
-              >
-                Validar requisitos
-              </Button>
+              {hasDescription ? (
+                <Button type="button" variant="outline-secondary" onClick={onSaveDescription}>
+                  Salvar descrição
+                </Button>
+              ) : null}
+              {hasDescription || extracting ? (
+                <Button type="button" onClick={onExtract} disabled={extracting}>
+                  {extracting ? 'Extraindo…' : 'Extrair requisitos com IA'}
+                </Button>
+              ) : null}
+              {hasRequirements ? (
+                <Button type="button" variant="success" onClick={onValidate}>
+                  Validar requisitos
+                </Button>
+              ) : null}
               <Button type="button" variant="outline-primary" onClick={onAddRequirement}>
                 Adicionar RF
               </Button>

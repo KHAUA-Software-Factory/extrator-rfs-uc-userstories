@@ -1,4 +1,12 @@
 import type { FunctionalRequirement, UseCase, UserStory } from './features/analysis/model/types';
+import {
+  EXTRACT_REQUIREMENTS_SYSTEM_PROMPT,
+  GENERATE_UML_SYSTEM_PROMPT,
+  GENERATE_USE_CASES_SYSTEM_PROMPT,
+  GENERATE_USER_STORIES_SYSTEM_PROMPT,
+  buildProjectScopedUserContent,
+  type AiProjectScope,
+} from './features/analysis/prompts';
 
 export type { FunctionalRequirement, UseCase, UserStory };
 
@@ -29,6 +37,10 @@ const OPENAI_BASE_URL = String(
   import.meta.env.VITE_OPENAI_BASE_URL || 'https://api.openai.com/v1',
 ).replace(/\/+$/, '');
 const OPENAI_RESPONSES_URL = `${OPENAI_BASE_URL}/responses`;
+
+type AiProjectScopedInput = {
+  project?: AiProjectScope;
+};
 
 const requirementSchema: JsonSchema = {
   type: 'object',
@@ -82,70 +94,6 @@ const userStorySchema: JsonSchema = {
     casos_de_uso_relacionados: { type: 'array', items: { type: 'string' } },
   },
 };
-
-function extractRequirementsPrompt() {
-  return (
-    'Voce e um analista de requisitos. A partir do texto livre do usuario, gere uma lista completa e proporcional de requisitos funcionais plausiveis. ' +
-    'Nao gere casos de uso e nao gere user stories nesta etapa. ' +
-    'Cada requisito deve ser claro, verificavel e escrito em portugues. ' +
-    "Use ator='Usuario' quando o ator nao estiver explicito. " +
-    'Use acao no infinitivo, como Criar, Consultar, Cancelar, Emitir, Aprovar, Exportar, Notificar, Gerenciar. ' +
-    "Use prioridade APENAS como 'Alta', 'Media' ou 'Baixa' (sem acento). " +
-    'Use objeto como o alvo funcional da acao. ' +
-    'Objetivo: produzir todos os requisitos funcionais necessarios para representar bem o input, sem limite minimo ou maximo fixo de quantidade. ' +
-    'A quantidade deve nascer do dominio descrito pelo usuario: entradas simples podem gerar poucos RFs; entradas ricas devem gerar todos os RFs relevantes. ' +
-    'Nao pare em uma quantidade arbitraria e nao force uma quantidade artificial. ' +
-    'Estruture mentalmente por modulos e cubra o que for plausivel dentro do contexto: ' +
-    '(1) autenticacao/contas/perfis, (2) cadastros principais do dominio, (3) operacoes principais (CRUD), (4) consultas/pesquisa/filtros, (5) validacoes e regras de negocio, ' +
-    '(6) historico/auditoria, (7) permissao por papel, (8) notificacoes, (9) importacao/exportacao (quando fizer sentido), (10) relatorios/indicadores (quando fizer sentido). ' +
-    'Nao invente entidades absurdas; inferir e permitido, mas deve ser plausivel e coerente com o dominio sugerido pelo texto. ' +
-    'Quando um requisito for explicitamente mencionado, use em origem um TRECHO LITERAL do texto. ' +
-    "Quando for uma inferencia plausivel (nao literal), use origem='inferido do contexto: <curta justificativa>'. " +
-    'Evite extrapolacoes fora do dominio; prefira granularizar funcionalidades diretamente relacionadas ao problema descrito.'
-  );
-}
-
-function generateUseCasesPrompt() {
-  return (
-    'Voce e um analista de requisitos e modelagem. A partir de requisitos funcionais (RFs), gere uma lista de casos de uso (UCs). ' +
-    'Retorne uma lista enxuta, sem inventar funcionalidades fora dos RFs. ' +
-    'Cada caso de uso deve ter: id (UC001, UC002...), nome curto, ator_principal, objetivo (1 frase) e relacoes. ' +
-    'Em relacoes, liste apenas dependencias reais entre UCs usando objetos com tipo include ou extend, destino com o id do UC alvo e condicao curta quando houver. ' +
-    'Use include quando um UC obrigatoriamente reutiliza outro UC. Use extend quando um UC representa comportamento opcional ou condicional sobre outro UC. ' +
-    'Se nao houver relacoes confiaveis para um UC, retorne relacoes como array vazio. ' +
-    'Nao gere PlantUML nesta etapa e nao gere user stories.'
-  );
-}
-
-function generateUmlPrompt() {
-  return (
-    'Voce e um analista UML. Converta a entrada (casos de uso validados OU requisitos funcionais) em um diagrama UML de casos de uso. ' +
-    'Retorne APENAS um texto PlantUML valido no seguinte subconjunto:\n' +
-    '- @startuml / @enduml\n' +
-    '- left to right direction\n' +
-    '- actor "Nome" as <actorId>\n' +
-    '- rectangle "<Sistema>" { usecase "Nome" as <usecaseId> }\n' +
-    '- associacoes: <actorId> -- <usecaseId>\n' +
-    '- include/extend: <sourceId> ..> <targetId> : <<include>> ou <<extend>>\n' +
-    'Regras:\n' +
-    '- Gere IDs estaveis: atores em snake_case (ex.: cliente, atendente), casos em UC001, UC002...\n' +
-    '- Cada UC deve ter ao menos um ator associado.\n' +
-    '- Quando a entrada trouxer relacoes nos casos de uso, preserve-as como setas include/extend no PlantUML.\n' +
-    '- Use include para passos obrigatorios reutilizados e extend para fluxos opcionais.\n' +
-    '- Nao invente funcionalidades fora dos RFs; se houver ambiguidade, prefira nao criar include/extend.\n'
-  );
-}
-
-function generateUserStoriesPrompt() {
-  return (
-    "Voce e um analista que escreve user stories no formato Mike Cohn: 'Como [papel], eu quero [funcionalidade] para [beneficio].' " +
-    'A entrada do usuario e um diagrama UML de casos de uso em PlantUML (subconjunto simples). ' +
-    'Para cada caso de uso, gere UMA user story principal. ' +
-    'O papel deve sair do(s) ator(es) do caso de uso (priorize o ator principal). ' +
-    "Inclua de 2 a 4 criterios de aceitacao curtos, comecando com 'Dado que', 'Quando' ou 'Entao'. " +
-    "Em 'casos_de_uso_relacionados' coloque os ids do(s) caso(s) de uso de origem (ex.: ['UC001'])."
-  );
-}
 
 function getOpenAiKey() {
   const key = String(import.meta.env.VITE_OPENAI_API_KEY || '').trim();
@@ -251,8 +199,10 @@ function normalizeRequirement(
 }
 
 function normalizeUseCase(useCase: Partial<UseCase>, index: number): UseCase {
+  const n = index + 1;
+  const ucWidth = Math.max(3, String(n).length);
   return {
-    id: String(useCase.id || `UC${String(index + 1).padStart(3, '0')}`),
+    id: String(useCase.id || `UC${String(n).padStart(ucWidth, '0')}`),
     nome: String(useCase.nome || ''),
     ator_principal: String(useCase.ator_principal || 'Usuario'),
     objetivo: String(useCase.objetivo || ''),
@@ -281,7 +231,7 @@ function normalizeUserStory(story: Partial<UserStory>, index: number): UserStory
   };
 }
 
-export async function extractRequirements(input: {
+export async function extractRequirements(input: AiProjectScopedInput & {
   text: string;
 }): Promise<{ requisitos_funcionais: FunctionalRequirement[] }> {
   const text = input.text.trim();
@@ -297,8 +247,12 @@ export async function extractRequirements(input: {
         requisitos_funcionais: { type: 'array', items: requirementSchema },
       },
     },
-    systemPrompt: extractRequirementsPrompt(),
-    userContent: text,
+    systemPrompt: EXTRACT_REQUIREMENTS_SYSTEM_PROMPT,
+    userContent: buildProjectScopedUserContent({
+      project: input.project,
+      step: 'extract_requirements',
+      payload: { description_text: text },
+    }),
   });
 
   return {
@@ -306,7 +260,7 @@ export async function extractRequirements(input: {
   };
 }
 
-export async function generateUseCases(input: {
+export async function generateUseCases(input: AiProjectScopedInput & {
   requisitos_funcionais: FunctionalRequirement[];
 }): Promise<{ casos_de_uso: UseCase[] }> {
   const result = await callOpenAiJson<{ casos_de_uso: Partial<UseCase>[] }>({
@@ -319,8 +273,12 @@ export async function generateUseCases(input: {
         casos_de_uso: { type: 'array', items: useCaseSchema },
       },
     },
-    systemPrompt: generateUseCasesPrompt(),
-    userContent: JSON.stringify({ requisitos_funcionais: input.requisitos_funcionais }, null, 2),
+    systemPrompt: GENERATE_USE_CASES_SYSTEM_PROMPT,
+    userContent: buildProjectScopedUserContent({
+      project: input.project,
+      step: 'generate_use_cases',
+      payload: { requisitos_funcionais: input.requisitos_funcionais },
+    }),
   });
 
   return {
@@ -328,7 +286,7 @@ export async function generateUseCases(input: {
   };
 }
 
-export async function generateUml(input: {
+export async function generateUml(input: AiProjectScopedInput & {
   systemName?: string;
   requisitos_funcionais?: FunctionalRequirement[];
   casos_de_uso?: UseCase[];
@@ -343,8 +301,16 @@ export async function generateUml(input: {
         plantuml: { type: 'string' },
       },
     },
-    systemPrompt: generateUmlPrompt(),
-    userContent: JSON.stringify(input, null, 2),
+    systemPrompt: GENERATE_UML_SYSTEM_PROMPT,
+    userContent: buildProjectScopedUserContent({
+      project: input.project,
+      step: 'generate_uml',
+      payload: {
+        systemName: input.systemName,
+        requisitos_funcionais: input.requisitos_funcionais,
+        casos_de_uso: input.casos_de_uso,
+      },
+    }),
   });
 
   const plantuml = String(result.plantuml || '').trim();
@@ -354,7 +320,7 @@ export async function generateUml(input: {
   return { plantuml };
 }
 
-export async function generateUserStories(input: {
+export async function generateUserStories(input: AiProjectScopedInput & {
   plantuml: string;
 }): Promise<{ user_stories: UserStory[] }> {
   const plantuml = input.plantuml.trim();
@@ -370,8 +336,12 @@ export async function generateUserStories(input: {
         user_stories: { type: 'array', items: userStorySchema },
       },
     },
-    systemPrompt: generateUserStoriesPrompt(),
-    userContent: plantuml,
+    systemPrompt: GENERATE_USER_STORIES_SYSTEM_PROMPT,
+    userContent: buildProjectScopedUserContent({
+      project: input.project,
+      step: 'generate_user_stories',
+      payload: { plantuml },
+    }),
   });
 
   return {

@@ -236,6 +236,69 @@ table {
   background: var(--surface);
 }
 
+.diagram-stage-fullwidth {
+  width: 100vw;
+  position: relative;
+  left: 50%;
+  right: 50%;
+  margin-left: -50vw;
+  margin-right: -50vw;
+  padding: 0 1rem 0.5rem;
+  box-sizing: border-box;
+}
+
+.diagram-editor-card {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.diagram-toolbar {
+  background: var(--surface-muted);
+  gap: 0.5rem;
+}
+
+.diagram-snap-switch {
+  white-space: nowrap;
+  padding-top: 0.15rem;
+}
+
+.diagram-snap-switch .form-check-label {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.diagram-canvas--expanded {
+  height: min(68vh, 720px);
+  min-height: 420px;
+}
+
+.diagram-code-block {
+  width: 100%;
+}
+
+.diagram-plantuml-input {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.diagram-floating-panel {
+  max-width: min(320px, 42vw);
+}
+
+.diagram-floating-panel .text-muted {
+  line-height: 1.25;
+}
+
+.diagram-canvas .react-flow__edges {
+  z-index: 0;
+}
+
+.diagram-canvas .react-flow__nodes {
+  z-index: 1;
+}
+
 .diagram-canvas .react-flow__node.diagram-node {
   align-items: center;
   display: inline-flex;
@@ -244,8 +307,12 @@ table {
 }
 
 .diagram-canvas .react-flow__edge-text {
-  font-size: 0.75rem;
+  font-size: 0.68rem;
   font-weight: 700;
+}
+
+.diagram-canvas .react-flow__edge-textbg {
+  opacity: 0.92;
 }
 
 .table-responsive {
@@ -311,6 +378,10 @@ table {
 
 .print-report__diagram-section {
   break-inside: avoid;
+}
+
+.print-report__diagram-page {
+  box-sizing: border-box;
 }
 
 .print-report__diagram {
@@ -449,8 +520,26 @@ table {
     width: 100%;
   }
 
-  .diagram-canvas {
+  .diagram-canvas,
+  .diagram-canvas--expanded {
     height: 380px;
+    min-height: 320px;
+  }
+
+  .diagram-stage-fullwidth {
+    padding-inline: 0.75rem;
+  }
+
+  .diagram-toolbar .ms-md-auto {
+    margin-left: 0 !important;
+  }
+
+  .diagram-toolbar .btn-group {
+    width: 100%;
+  }
+
+  .diagram-toolbar .btn-group .btn {
+    flex: 1 1 auto;
   }
 }
 
@@ -482,7 +571,36 @@ table {
     background: #ffffff;
   }
 
-  .print-report section {
+  .print-report > section:not(.print-report__diagram-page) {
     break-inside: avoid;
+  }
+
+  .print-report__diagram-page {
+    break-before: page;
+    page-break-before: always;
+    page-break-after: always;
+    break-inside: avoid;
+    width: 100%;
+    min-height: 100vh;
+    max-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    margin: 0;
+  }
+
+  .print-report__diagram-page h2 {
+    flex: 0 0 auto;
+    margin: 0 0 3mm 0;
+    font-size: 11pt;
+  }
+
+  .print-report__diagram-page .print-report__diagram {
+    flex: 1 1 auto;
+    width: 100% !important;
+    min-height: 0;
+    height: calc(100vh - 14mm) !important;
+    max-height: none !important;
+    border: 1px solid #94a3b8;
   }
 }

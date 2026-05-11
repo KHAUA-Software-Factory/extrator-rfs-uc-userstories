@@ -98,7 +98,7 @@ export function AnalysisReport(props: Props) {
         </table>
       </section>
 
-      <section className="print-report__diagram-section">
+      <section className="print-report__diagram-section print-report__diagram-page">
         <h2>Diagrama de casos de uso</h2>
         <StaticDiagram diagram={diagram} />
       </section>
@@ -152,7 +152,12 @@ function StaticDiagram({ diagram }: { diagram: DiagramModel | null }) {
   const systemBounds = getSystemBounds(useCaseBoxes.map((box) => shiftBox(box, offsetX, offsetY)));
 
   return (
-    <svg className="print-report__diagram" viewBox={`0 0 ${width} ${height}`} role="img">
+    <svg
+      className="print-report__diagram"
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="xMidYMid meet"
+      role="img"
+    >
       <defs>
         <marker
           id="report-diagram-arrow"

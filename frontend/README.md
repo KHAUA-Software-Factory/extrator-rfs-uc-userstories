@@ -25,7 +25,6 @@ VITE_FIREBASE_APP_ID=
 VITE_OPENAI_API_KEY=
 VITE_OPENAI_MODEL=gpt-5.2
 VITE_OPENAI_BASE_URL=https://api.openai.com/v1
-VITE_DEMO_AUTH=1
 VITE_BASE_PATH=/
 ```
 
@@ -52,7 +51,7 @@ Usuarios autenticados precisam estar cadastrados em `userAccess/{gmail}` com:
 
 Niveis:
 
-- `admin`: ve todas as sessoes e acessa a gestao de usuarios.
+- `admin`: ve todas as sessoes e insere, edita e remove usuarios.
 - `user`: ve apenas as proprias sessoes.
 
 Para criar o primeiro admin sem backend, cadastre manualmente o documento
@@ -92,5 +91,4 @@ Secrets esperados:
 - `VITE_OPENAI_API_KEY`
 - `VITE_OPENAI_MODEL` (opcional)
 - `VITE_OPENAI_BASE_URL` (opcional)
-- `VITE_DEMO_AUTH` (opcional; padrao do workflow: `1`)
 - `VITE_BASE_PATH` (opcional; padrao: `/` para `ms.khaua.com.br`)

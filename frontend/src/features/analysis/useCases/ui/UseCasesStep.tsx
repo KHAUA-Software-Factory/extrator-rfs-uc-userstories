@@ -37,22 +37,28 @@ export function UseCasesStep(props: Props) {
 
   if (phase !== 2) return null;
 
+  const canGenerate = requirementsCount > 0 && statusText === 'requirements_validated';
+  const hasUseCases = useCases.length > 0;
+
   return (
     <>
       <h5 className="mb-3">Etapa 2 – Casos de uso (IA + edição)</h5>
       <Stack direction="horizontal" gap={2} className="action-bar mb-3">
-        <Button
-          onClick={onGenerate}
-          disabled={generating || !requirementsCount || statusText !== 'requirements_validated'}
-        >
-          {generating ? 'Gerando…' : 'Gerar lista de UCs com IA'}
-        </Button>
-        <Button variant="success" onClick={onValidate} disabled={!useCases.length}>
-          Validar UCs
-        </Button>
-        <Button variant="outline-primary" onClick={onAddUseCase}>
-          Adicionar UC
-        </Button>
+        {canGenerate || generating ? (
+          <Button onClick={onGenerate} disabled={generating}>
+            {generating ? 'Gerando…' : 'Gerar lista de UCs com IA'}
+          </Button>
+        ) : null}
+        {hasUseCases ? (
+          <Button variant="success" onClick={onValidate}>
+            Validar UCs
+          </Button>
+        ) : null}
+        {requirementsCount ? (
+          <Button variant="outline-primary" onClick={onAddUseCase}>
+            Adicionar UC
+          </Button>
+        ) : null}
         <div className="status-pill text-muted small ms-auto">
           status: <code>{statusLabel}</code>
         </div>

@@ -30,19 +30,23 @@ export function UserStoriesStep(props: Props) {
 
   if (phase !== 4) return null;
 
+  const canGenerate = Boolean(plantuml.trim()) && statusText === 'uml_validated';
+  const hasUserStories = userStories.length > 0;
+
   return (
     <>
       <h5 className="mb-3">Etapa 4 – User Stories (IA)</h5>
       <Stack direction="horizontal" gap={2} className="action-bar mb-3">
-        <Button
-          onClick={onGenerate}
-          disabled={generating || !plantuml.trim() || statusText !== 'uml_validated'}
-        >
-          {generating ? 'Gerando…' : 'Gerar User Stories com IA'}
-        </Button>
-        <Button variant="success" onClick={onExportPdf} disabled={!userStories.length}>
-          Gerar PDF
-        </Button>
+        {canGenerate || generating ? (
+          <Button onClick={onGenerate} disabled={generating}>
+            {generating ? 'Gerando…' : 'Gerar User Stories com IA'}
+          </Button>
+        ) : null}
+        {hasUserStories ? (
+          <Button variant="success" onClick={onExportPdf}>
+            Baixar PDF
+          </Button>
+        ) : null}
         <div className="status-pill text-muted small ms-auto">
           status: <code>{statusLabel}</code>
         </div>

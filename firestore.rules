@@ -5,27 +5,39 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAdmin() {
+    function hasFirebaseAdminClaim() {
       return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    function isBootstrapAdmin() {
+      return isSignedIn()
+        && request.auth.token.email in ['khauatech@gmail.com'];
     }
 
     function accessPath() {
       return /databases/$(database)/documents/userAccess/$(request.auth.token.email);
     }
 
-    function hasAccessRole(role) {
+    function hasAccessDoc() {
       return isSignedIn()
         && request.auth.token.email is string
-        && exists(accessPath())
-        && get(accessPath()).data.role == role;
+        && exists(accessPath());
+    }
+
+    function accessRole() {
+      return hasAccessDoc() ? get(accessPath()).data.role : null;
+    }
+
+    function hasAdminAccess() {
+      return hasFirebaseAdminClaim() || isBootstrapAdmin() || accessRole() == 'admin';
+    }
+
+    function hasUserAccess() {
+      return accessRole() == 'user';
     }
 
     function hasAnyAccess() {
-      return hasAccessRole('admin') || hasAccessRole('user');
-    }
-
-    function isAppAdmin() {
-      return isAdmin() || hasAccessRole('admin');
+      return hasAdminAccess() || hasUserAccess();
     }
 
     function isOwner(uid) {
@@ -33,16 +45,14 @@ service cloud.firestore {
     }
 
     match /userAccess/{email} {
-      allow read: if isAppAdmin() || (isSignedIn() && request.auth.token.email == email);
-      allow write: if isAppAdmin();
-    }
-
-    match /users/{uid} {
-      allow read, write: if isAppAdmin() || (isOwner(uid) && hasAnyAccess());
+      // Admin cadastra/edita/remove usuarios. Cada usuario pode ler apenas seu proprio nivel.
+      allow read: if hasAdminAccess() || (isSignedIn() && request.auth.token.email == email);
+      allow write: if hasAdminAccess();
     }
 
     match /users/{uid}/sessions/{sessionId} {
-      allow read, write: if isAppAdmin() || (isOwner(uid) && hasAnyAccess());
+      // Admin ve tudo. User ve/grava somente suas proprias sessoes.
+      allow read, write: if hasAdminAccess() || (isOwner(uid) && hasAnyAccess());
     }
 
     match /{document=**} {

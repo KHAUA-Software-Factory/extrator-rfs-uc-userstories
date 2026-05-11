@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Container from 'react-bootstrap/Container';
 import Button from 'react-bootstrap/Button';
 import Navbar from 'react-bootstrap/Navbar';
@@ -12,20 +12,10 @@ import Col from 'react-bootstrap/Col';
 import Offcanvas from 'react-bootstrap/Offcanvas';
 import Nav from 'react-bootstrap/Nav';
 import Card from 'react-bootstrap/Card';
-import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
+import ButtonGroup from 'react-bootstrap/ButtonGroup';
+import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 
 import { auth, googleProvider } from './firebase';
-import {
-  createDemoAuthUser,
-  clearActiveDemoUser,
-  DEMO_USERS,
-  demoAuthEnabled,
-  getActiveDemoUser,
-  isDemoAuthUser,
-  setActiveDemoUser,
-  type AppUser,
-  type DemoUserProfile,
-} from './demoAuth';
 import {
   extractRequirements,
   generateUseCases,
@@ -59,6 +49,9 @@ import {
   Background,
   Controls,
   MarkerType,
+  MiniMap,
+  Panel,
+  useReactFlow,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -69,6 +62,7 @@ import {
   diagramModelToPlantuml,
   buildDiagramModelFromUseCases,
   plantumlToDiagramModel,
+  relayoutDiagramModel,
   type DiagramModel,
 } from './plantumlBridge';
 import {
@@ -80,9 +74,14 @@ import { RequirementsStep } from './features/analysis/requirements/ui/Requiremen
 import { UseCasesStep } from './features/analysis/useCases/ui/UseCasesStep';
 import { UserStoriesStep } from './features/analysis/userStories/ui/UserStoriesStep';
 import { AnalysisReport } from './features/analysis/report/ui/AnalysisReport';
+import { exportAnalysisPdf } from './features/analysis/report/model/exportAnalysisPdf';
+import type { AiProjectScope } from './features/analysis/prompts';
 import 'reactflow/dist/style.css';
 
 type NewEdgeKind = 'association' | 'include' | 'extend';
+
+/** Malha do canvas alinhada ao `snapToGrid` do React Flow (px). */
+const DIAGRAM_SNAP_GRID: [number, number] = [16, 16];
 
 type ProcessingState = {
   title: string;
@@ -90,6 +89,8 @@ type ProcessingState = {
   step: number;
   total: number;
 };
+
+type AutosaveSession = Pick<SessionLoaded, 'uid' | 'id' | 'statusText'>;
 
 const AUTH_STARTUP_FALLBACK_MS = 2500;
 
@@ -113,6 +114,18 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function getSessionKey(session: Pick<SessionLoaded, 'uid' | 'id'> | null) {
+  return session ? `${session.uid}:${session.id}` : '';
+}
+
+function getAiProjectScope(session: SessionLoaded): AiProjectScope {
+  return {
+    projectId: session.id,
+    projectTitle: session.title,
+    ownerUid: session.uid,
+  };
+}
+
 function readDiagramFromSession(session: SessionLoaded): DiagramModel | null {
   if (session.diagramModelText) {
     try {
@@ -132,6 +145,8 @@ function readDiagramFromSession(session: SessionLoaded): DiagramModel | null {
 
 function relationEdgePatch(relationType: 'include' | 'extend'): Partial<Edge> {
   return {
+    type: 'default',
+    pathOptions: { curvature: 0.22 },
     label: `<<${relationType}>>`,
     data: { relationType },
     labelBgPadding: [8, 4],
@@ -144,8 +159,9 @@ function relationEdgePatch(relationType: 'include' | 'extend'): Partial<Edge> {
     markerEnd: { type: MarkerType.ArrowClosed },
     style: {
       stroke: relationType === 'include' ? '#2563eb' : '#7c3aed',
-      strokeWidth: 2,
+      strokeWidth: 1.35,
       strokeDasharray: '7 5',
+      opacity: 0.42,
     },
   };
 }
@@ -170,6 +186,28 @@ function downloadTextFile(filename: string, contents: string, type: string) {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+function getAccessRoleLabel(role: AccessRole | null) {
+  if (role === 'admin') return 'admin';
+  if (role === 'user') return 'user';
+  return 'sem acesso';
+}
+
+const minimapNodeColor = (node: { id?: unknown }) =>
+  String(node.id || '').startsWith('UC') ? '#2563eb' : '#64748b';
+
+function DiagramFitView({ revision }: { revision: number }) {
+  const { fitView } = useReactFlow();
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      fitView({ padding: 0.2, duration: 240 });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [revision, fitView]);
+
+  return null;
 }
 
 function ProcessingStatus({ processing }: { processing: ProcessingState | null }) {
@@ -197,7 +235,7 @@ function ProcessingStatus({ processing }: { processing: ProcessingState | null }
 }
 
 function App() {
-  const [user, setUser] = useState<AppUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [isAdmin, setIsAdmin] = useState(false);
@@ -224,10 +262,78 @@ function App() {
   const [generatingUml, setGeneratingUml] = useState(false);
   const [savingDiagram, setSavingDiagram] = useState(false);
   const [newEdgeKind, setNewEdgeKind] = useState<NewEdgeKind>('association');
+  const [diagramMiniMap, setDiagramMiniMap] = useState(true);
+  const [diagramSnapToGrid, setDiagramSnapToGrid] = useState(true);
+  const [diagramLayoutRevision, setDiagramLayoutRevision] = useState(0);
   const [userStories, setUserStories] = useState<UserStory[]>([]);
   const [generatingStories, setGeneratingStories] = useState(false);
   const [processing, setProcessing] = useState<ProcessingState | null>(null);
   const wizard = useAnalysisWizard(activeSession?.statusText);
+
+  const activeSessionRef = useRef(activeSession);
+  const diagramAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    activeSessionRef.current = activeSession;
+  }, [activeSession]);
+
+  useEffect(() => {
+    return () => {
+      if (diagramAutosaveTimerRef.current) {
+        window.clearTimeout(diagramAutosaveTimerRef.current);
+      }
+    };
+  }, []);
+
+  const clearDiagramAutosaveTimer = useCallback(() => {
+    if (diagramAutosaveTimerRef.current) {
+      window.clearTimeout(diagramAutosaveTimerRef.current);
+      diagramAutosaveTimerRef.current = null;
+    }
+  }, []);
+
+  const flushDiagramAutosave = useCallback(async (s: AutosaveSession, model: DiagramModel, puml: string) => {
+    if (!s || !model.nodes.length || !puml.trim()) return;
+    try {
+      await updateSession(s.uid, s.id, {
+        plantumlText: puml,
+        diagramModelText: JSON.stringify(model),
+        statusText: s.statusText,
+      });
+      setActiveSession((prev) =>
+        prev && prev.id === s.id && prev.uid === s.uid
+          ? { ...prev, plantumlText: puml, diagramModelText: JSON.stringify(model) }
+          : prev,
+      );
+    } catch (e) {
+      setError(getErrorMessage(e));
+    }
+  }, []);
+
+  const scheduleDiagramAutosave = useCallback(
+    (model: DiagramModel, puml: string) => {
+      const session = activeSessionRef.current;
+      if (!session) return;
+      const autosaveSession = {
+        uid: session.uid,
+        id: session.id,
+        statusText: session.statusText,
+      };
+      if (diagramAutosaveTimerRef.current) {
+        window.clearTimeout(diagramAutosaveTimerRef.current);
+      }
+      diagramAutosaveTimerRef.current = window.setTimeout(() => {
+        diagramAutosaveTimerRef.current = null;
+        void flushDiagramAutosave(autosaveSession, model, puml);
+      }, 850);
+    },
+    [flushDiagramAutosave],
+  );
+
+  const isCurrentSession = useCallback(
+    (session: SessionLoaded) => getSessionKey(activeSessionRef.current) === getSessionKey(session),
+    [],
+  );
 
   useEffect(() => {
     let authStateResolved = false;
@@ -240,11 +346,9 @@ function App() {
       (u) => {
         authStateResolved = true;
         window.clearTimeout(fallbackTimer);
-        const demoProfile = !u && demoAuthEnabled ? getActiveDemoUser() : null;
-        const nextUser = u || (demoProfile ? createDemoAuthUser(demoProfile) : null);
-        setUser(nextUser);
+        setUser(u);
         setLoading(false);
-        if (nextUser) {
+        if (u) {
           // Always land on the dashboard after login (no auto-open workspace).
           setActiveView('dashboard');
           setSidebarOpen(false);
@@ -257,6 +361,12 @@ function App() {
           setDiagram(null);
           setUserStories([]);
           setError('');
+        } else {
+          setAccessRole(null);
+          setIsAdmin(false);
+          setSessions([]);
+          setAccessUsers([]);
+          setActiveSession(null);
         }
       },
       (authError) => {
@@ -401,39 +511,12 @@ function App() {
     }
   }
 
-  function handleDemoLogin(profile: DemoUserProfile) {
-    setError('');
-    setActiveDemoUser(profile);
-    setUser(createDemoAuthUser(profile));
-    setLoading(false);
-    setActiveView('dashboard');
-    setSidebarOpen(false);
-    setPhase(1);
-    setActiveSession(null);
-    setDescriptionText('');
-    setRequirements([]);
-    setUseCases([]);
-    setPlantuml('');
-    setDiagram(null);
-    setUserStories([]);
-  }
-
   async function handleLogout() {
+    clearDiagramAutosaveTimer();
     setError('');
     showProcessing('Encerrando sessão', 'Saindo da conta atual.', 1, 1);
     try {
-      if (isDemoAuthUser(user)) {
-        clearActiveDemoUser();
-        setUser(null);
-        setIsAdmin(false);
-        setAccessRole(null);
-        setSessions([]);
-        setAccessUsers([]);
-        setActiveSession(null);
-        setActiveView('dashboard');
-      } else {
-        await signOut(auth);
-      }
+      await signOut(auth);
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -460,7 +543,22 @@ function App() {
     try {
       await saveAccessUser(accessEmail, accessRoleDraft);
       setAccessEmail('');
+      setAccessRoleDraft('user');
       showProcessing('Salvando acesso', 'Recarregando usuários cadastrados.', 2, 2);
+      await refreshAccessUsers();
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setProcessing(null);
+    }
+  }
+
+  async function handleChangeAccessUserRole(email: string, role: AccessRole) {
+    setError('');
+    showProcessing('Editando acesso', 'Atualizando nível do Gmail selecionado.', 1, 2);
+    try {
+      await saveAccessUser(email, role);
+      showProcessing('Editando acesso', 'Recarregando usuários cadastrados.', 2, 2);
       await refreshAccessUsers();
     } catch (e) {
       setError(getErrorMessage(e));
@@ -484,6 +582,7 @@ function App() {
   }
 
   async function handleNewAnalysis() {
+    clearDiagramAutosaveTimer();
     setError('');
     showProcessing('Criando análise', 'Abrindo uma nova sessão no banco de dados.', 1, 3);
     try {
@@ -511,6 +610,7 @@ function App() {
   }
 
   async function handleSelectSession(item: SessionListItem) {
+    clearDiagramAutosaveTimer();
     setError('');
     showProcessing('Abrindo análise', 'Carregando dados salvos da sessão.', 1, 2);
     try {
@@ -529,6 +629,7 @@ function App() {
       setDiagram(readDiagramFromSession(loaded));
       setUserStories(loaded.userStoriesText ? JSON.parse(loaded.userStoriesText) : []);
       setPhase(getRecommendedPhase(loaded.statusText));
+      setDiagramLayoutRevision((value) => value + 1);
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -537,12 +638,14 @@ function App() {
   }
 
   async function handleSaveDescription() {
-    if (!activeSession) return;
+    const session = activeSession;
+    if (!session) return;
     setError('');
     showProcessing('Salvando descrição', 'Registrando o texto inicial da análise.', 1, 1);
     try {
-      await updateSession(activeSession.uid, activeSession.id, { descriptionText });
-      setActiveSession({ ...activeSession, descriptionText });
+      await updateSession(session.uid, session.id, { descriptionText });
+      if (!isCurrentSession(session)) return;
+      setActiveSession({ ...session, descriptionText });
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -616,7 +719,9 @@ function App() {
       const match = String(useCase.id || '').match(/^UC(\d+)$/i);
       return match ? Math.max(currentMax, Number(match[1])) : currentMax;
     }, 0);
-    return `UC${String(max + 1).padStart(3, '0')}`;
+    const next = max + 1;
+    const width = Math.max(3, String(next).length);
+    return `UC${String(next).padStart(width, '0')}`;
   }
 
   function createBlankUseCase(items: UseCase[]): UseCase {
@@ -665,7 +770,10 @@ function App() {
   }
 
   async function handleExtractRequirements() {
-    if (!activeSession) return;
+    const session = activeSession;
+    if (!session) return;
+    const project = getAiProjectScope(session);
+    const sourceDescription = descriptionText;
     setError('');
     setExtracting(true);
     showProcessing('Etapa 1: requisitos funcionais', 'Preparando o texto para análise.', 1, 4);
@@ -679,7 +787,8 @@ function App() {
         2,
         4,
       );
-      const result = await extractRequirements({ text: descriptionText });
+      const result = await extractRequirements({ text: sourceDescription, project });
+      if (!isCurrentSession(session)) return;
       showProcessing('Etapa 1: requisitos funcionais', 'Organizando requisitos retornados.', 3, 4);
       setRequirements(result.requisitos_funcionais);
       setUseCases([]);
@@ -688,8 +797,8 @@ function App() {
       setUserStories([]);
       const requirementsText = JSON.stringify(result.requisitos_funcionais);
       showProcessing('Etapa 1: requisitos funcionais', 'Salvando requisitos na sessão.', 4, 4);
-      await updateSession(activeSession.uid, activeSession.id, {
-        descriptionText,
+      await updateSession(session.uid, session.id, {
+        descriptionText: sourceDescription,
         requirementsText,
         useCasesText: '',
         plantumlText: '',
@@ -697,9 +806,10 @@ function App() {
         userStoriesText: '',
         statusText: 'requirements_generated',
       });
+      if (!isCurrentSession(session)) return;
       setActiveSession({
-        ...activeSession,
-        descriptionText,
+        ...session,
+        descriptionText: sourceDescription,
         requirementsText,
         useCasesText: '',
         plantumlText: '',
@@ -716,12 +826,14 @@ function App() {
   }
 
   async function handleValidateRequirements() {
-    if (!activeSession) return;
+    const session = activeSession;
+    if (!session) return;
+    const nextRequirements = requirements;
     setError('');
     showProcessing('Validando requisitos', 'Salvando requisitos revisados.', 1, 2);
     try {
-      const requirementsText = JSON.stringify(requirements);
-      await updateSession(activeSession.uid, activeSession.id, {
+      const requirementsText = JSON.stringify(nextRequirements);
+      await updateSession(session.uid, session.id, {
         requirementsText,
         useCasesText: '',
         plantumlText: '',
@@ -729,13 +841,14 @@ function App() {
         userStoriesText: '',
         statusText: 'requirements_validated',
       });
+      if (!isCurrentSession(session)) return;
       showProcessing('Validando requisitos', 'Liberando a etapa de casos de uso.', 2, 2);
       setUseCases([]);
       setPlantuml('');
       setDiagram(null);
       setUserStories([]);
       setActiveSession({
-        ...activeSession,
+        ...session,
         requirementsText,
         useCasesText: '',
         plantumlText: '',
@@ -752,23 +865,31 @@ function App() {
   }
 
   async function handleGenerateUseCases() {
-    if (!activeSession) return;
+    const session = activeSession;
+    if (!session) return;
+    const project = getAiProjectScope(session);
+    const sourceRequirements = requirements;
     setError('');
     setGeneratingUseCases(true);
     showProcessing('Etapa 2: casos de uso', 'Enviando requisitos validados para a IA.', 1, 4);
     try {
-      const result = await generateUseCases({ requisitos_funcionais: requirements });
+      const result = await generateUseCases({
+        requisitos_funcionais: sourceRequirements,
+        project,
+      });
+      if (!isCurrentSession(session)) return;
       showProcessing('Etapa 2: casos de uso', 'Normalizando casos de uso e relações.', 2, 4);
       const normalizedUseCases = result.casos_de_uso.map(normalizeUseCase);
       setUseCases(normalizedUseCases);
       const useCasesText = JSON.stringify(normalizedUseCases);
       showProcessing('Etapa 2: casos de uso', 'Salvando casos de uso gerados.', 3, 4);
-      await updateSession(activeSession.uid, activeSession.id, {
+      await updateSession(session.uid, session.id, {
         useCasesText,
         statusText: 'use_cases_generated',
       });
+      if (!isCurrentSession(session)) return;
       showProcessing('Etapa 2: casos de uso', 'Atualizando a tela de edição.', 4, 4);
-      setActiveSession({ ...activeSession, useCasesText, statusText: 'use_cases_generated' });
+      setActiveSession({ ...session, useCasesText, statusText: 'use_cases_generated' });
       setPhase(2);
     } catch (e) {
       setError(getErrorMessage(e));
@@ -779,19 +900,22 @@ function App() {
   }
 
   async function handleValidateUseCases() {
-    if (!activeSession) return;
+    const session = activeSession;
+    if (!session) return;
+    const sourceUseCases = useCases;
     setError('');
     showProcessing('Validando casos de uso', 'Salvando UCs e relações revisadas.', 1, 2);
     try {
-      const normalizedUseCases = useCases.map(normalizeUseCase);
+      const normalizedUseCases = sourceUseCases.map(normalizeUseCase);
       const useCasesText = JSON.stringify(normalizedUseCases);
-      await updateSession(activeSession.uid, activeSession.id, {
+      await updateSession(session.uid, session.id, {
         useCasesText,
         statusText: 'use_cases_validated',
       });
+      if (!isCurrentSession(session)) return;
       showProcessing('Validando casos de uso', 'Liberando a etapa de diagrama.', 2, 2);
       setUseCases(normalizedUseCases);
-      setActiveSession({ ...activeSession, useCasesText, statusText: 'use_cases_validated' });
+      setActiveSession({ ...session, useCasesText, statusText: 'use_cases_validated' });
       setPhase(3);
     } catch (e) {
       setError(getErrorMessage(e));
@@ -801,31 +925,36 @@ function App() {
   }
 
   async function handleGenerateUml() {
-    if (!activeSession) return;
+    const session = activeSession;
+    if (!session) return;
+    const sourceUseCases = useCases;
     setError('');
     setGeneratingUml(true);
     showProcessing('Etapa 3: diagrama', 'Montando nós a partir dos casos de uso.', 1, 4);
     try {
-      const model = buildDiagramModelFromUseCases(useCases, activeSession.title || 'Sistema');
+      const model = buildDiagramModelFromUseCases(sourceUseCases, session.title || 'Sistema');
       showProcessing('Etapa 3: diagrama', 'Aplicando associações, include e extend.', 2, 4);
       const nextPlantuml = diagramModelToPlantuml(model);
+      if (!isCurrentSession(session)) return;
       setPlantuml(nextPlantuml);
       setDiagram(model);
       const diagramModelText = JSON.stringify(model);
       showProcessing('Etapa 3: diagrama', 'Salvando modelo gráfico e PlantUML.', 3, 4);
-      await updateSession(activeSession.uid, activeSession.id, {
+      await updateSession(session.uid, session.id, {
         plantumlText: nextPlantuml,
         diagramModelText,
         statusText: 'uml_generated',
       });
+      if (!isCurrentSession(session)) return;
       showProcessing('Etapa 3: diagrama', 'Atualizando editor visual.', 4, 4);
       setActiveSession({
-        ...activeSession,
+        ...session,
         plantumlText: nextPlantuml,
         diagramModelText,
         statusText: 'uml_generated',
       });
       setPhase(3);
+      setDiagramLayoutRevision((value) => value + 1);
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -838,7 +967,9 @@ function App() {
     setDiagram((current) => {
       if (!current) return current;
       const next = updater(current);
-      setPlantuml(diagramModelToPlantuml(next));
+      const nextPuml = diagramModelToPlantuml(next);
+      setPlantuml(nextPuml);
+      scheduleDiagramAutosave(next, nextPuml);
       return next;
     });
   }
@@ -866,7 +997,11 @@ function App() {
   }
 
   async function persistDiagram(statusText?: string) {
-    if (!activeSession) return;
+    const session = activeSession;
+    if (!session) return false;
+    const sourceDiagram = diagram;
+    const sourcePlantuml = plantuml;
+    clearDiagramAutosaveTimer();
     setError('');
     setSavingDiagram(true);
     showProcessing(
@@ -876,10 +1011,10 @@ function App() {
       3,
     );
     try {
-      const model = diagram || plantumlToDiagramModel(plantuml);
+      const model = sourceDiagram || plantumlToDiagramModel(sourcePlantuml);
       const nextPlantuml = diagramModelToPlantuml(model);
       const diagramModelText = JSON.stringify(model);
-      const nextStatus = statusText || activeSession.statusText;
+      const nextStatus = statusText || session.statusText;
 
       showProcessing(
         statusText === 'uml_validated' ? 'Validando diagrama' : 'Salvando diagrama',
@@ -887,11 +1022,12 @@ function App() {
         2,
         3,
       );
-      await updateSession(activeSession.uid, activeSession.id, {
+      await updateSession(session.uid, session.id, {
         plantumlText: nextPlantuml,
         diagramModelText,
         statusText: nextStatus,
       });
+      if (!isCurrentSession(session)) return false;
 
       showProcessing(
         statusText === 'uml_validated' ? 'Validando diagrama' : 'Salvando diagrama',
@@ -904,13 +1040,15 @@ function App() {
       setPlantuml(nextPlantuml);
       setDiagram(model);
       setActiveSession({
-        ...activeSession,
+        ...session,
         plantumlText: nextPlantuml,
         diagramModelText,
         statusText: nextStatus,
       });
+      return true;
     } catch (e) {
       setError(getErrorMessage(e));
+      return false;
     } finally {
       setSavingDiagram(false);
       setProcessing(null);
@@ -922,33 +1060,40 @@ function App() {
   }
 
   async function handleValidateUml() {
-    await persistDiagram('uml_validated');
-    setPhase(4);
+    if (await persistDiagram('uml_validated')) {
+      setPhase(4);
+    }
   }
 
   async function handleGenerateUserStories() {
-    if (!activeSession) return;
+    const session = activeSession;
+    if (!session) return;
+    const project = getAiProjectScope(session);
+    const sourceDiagram = diagram;
+    const sourcePlantumlText = plantuml;
     setError('');
     setGeneratingStories(true);
     showProcessing('Etapa 4: user stories', 'Preparando diagrama validado para a IA.', 1, 4);
     try {
-      const sourcePlantuml = plantuml.trim()
-        ? plantuml
-        : diagram
-          ? diagramModelToPlantuml(diagram)
+      const sourcePlantuml = sourcePlantumlText.trim()
+        ? sourcePlantumlText
+        : sourceDiagram
+          ? diagramModelToPlantuml(sourceDiagram)
           : '';
       if (!sourcePlantuml) throw new Error('missing_plantuml');
       showProcessing('Etapa 4: user stories', 'Gerando user stories e critérios de aceite.', 2, 4);
-      const result = await generateUserStories({ plantuml: sourcePlantuml });
+      const result = await generateUserStories({ plantuml: sourcePlantuml, project });
+      if (!isCurrentSession(session)) return;
       showProcessing('Etapa 4: user stories', 'Organizando histórias retornadas.', 3, 4);
       setUserStories(result.user_stories);
       const userStoriesText = JSON.stringify(result.user_stories);
       showProcessing('Etapa 4: user stories', 'Salvando user stories na sessão.', 4, 4);
-      await updateSession(activeSession.uid, activeSession.id, {
+      await updateSession(session.uid, session.id, {
         userStoriesText,
         statusText: 'user_stories_generated',
       });
-      setActiveSession({ ...activeSession, userStoriesText, statusText: 'user_stories_generated' });
+      if (!isCurrentSession(session)) return;
+      setActiveSession({ ...session, userStoriesText, statusText: 'user_stories_generated' });
       setPhase(4);
     } catch (e) {
       setError(getErrorMessage(e));
@@ -964,18 +1109,26 @@ function App() {
     downloadTextFile(filename, diagramModelToDrawioXml(diagram), 'application/xml;charset=utf-8');
   }
 
-  function handleExportPdf() {
+  async function handleExportPdf() {
     if (!activeSession || !userStories.length) return;
-    const previousTitle = document.title;
-    const restoreTitle = () => {
-      document.title = previousTitle;
-      window.removeEventListener('afterprint', restoreTitle);
-    };
-
     setError('');
-    document.title = `${activeSession.title || 'Extrator de Engenharia de Software'} - Relatorio`;
-    window.addEventListener('afterprint', restoreTitle);
-    window.print();
+    showProcessing('Gerando PDF', 'Montando relatorio para download.', 1, 1);
+    try {
+      await exportAnalysisPdf({
+        title: activeSession.title || 'Analise de requisitos',
+        statusLabel: getStatusLabel(activeSession.statusText),
+        descriptionText,
+        requirements,
+        useCases,
+        diagram,
+        userStories,
+        filename: `${slugFileName(activeSession.title || 'relatorio')}.pdf`,
+      });
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setProcessing(null);
+    }
   }
 
   function buildEdgeFromConnection(connection: Connection) {
@@ -993,10 +1146,11 @@ function App() {
         id: `assoc:${source}--${target}:${Date.now()}`,
         label: '',
         data: { relationType: 'association' },
-        type: 'smoothstep',
+        type: 'straight',
         style: {
           stroke: '#64748b',
-          strokeWidth: 1.7,
+          strokeWidth: 1.15,
+          opacity: 0.38,
         },
       };
     }
@@ -1004,7 +1158,6 @@ function App() {
     return {
       ...connection,
       id: `rel:${source}..>${target}:${relationType}:${Date.now()}`,
-      type: 'smoothstep',
       ...relationEdgePatch(relationType),
     };
   }
@@ -1021,13 +1174,29 @@ function App() {
   function handlePlantumlChange(value: string) {
     setPlantuml(value);
     try {
-      setDiagram(plantumlToDiagramModel(value));
+      const next = plantumlToDiagramModel(value);
+      setDiagram(next);
+      scheduleDiagramAutosave(next, value);
     } catch {
       // Keep the last valid diagram while the user is editing the code.
     }
   }
 
+  function handleRelayoutDiagram() {
+    syncDiagram((current) => relayoutDiagramModel(current));
+    setDiagramLayoutRevision((value) => value + 1);
+  }
+
+  function handleFitDiagramView() {
+    setDiagramLayoutRevision((value) => value + 1);
+  }
+
   const phaseLocked = wizard.phaseLocked;
+  const activeStatus = activeSession?.statusText || '';
+  const canGenerateDiagram = activeStatus === 'use_cases_validated' && useCases.length > 0;
+  const canSaveDiagram = Boolean(plantuml.trim());
+  const canDownloadDiagram = Boolean(diagram);
+  const canValidateDiagram = Boolean(diagram && plantuml.trim());
 
   return (
     <>
@@ -1055,11 +1224,9 @@ function App() {
                 <div className="user-chip text-muted small">
                   {displayName}{' '}
                   {isAdmin ? (
-                    <strong>(admin)</strong>
-                  ) : accessRole === 'user' ? (
-                    <span>(usuário)</span>
+                    <strong>({getAccessRoleLabel(accessRole)})</strong>
                   ) : (
-                    <span>(sem acesso)</span>
+                    <span>({getAccessRoleLabel(accessRole)})</span>
                   )}
                 </div>
                 <Button variant="outline-secondary" onClick={handleLogout} className="auth-action">
@@ -1108,26 +1275,28 @@ function App() {
                   >
                     Sessões
                   </Nav.Link>
-                  <Nav.Link
-                    eventKey="users"
-                    onClick={() => {
-                      setActiveView('users');
-                      setSidebarOpen(false);
-                    }}
-                    disabled={!isAdmin}
-                  >
-                    Gestão de usuários
-                  </Nav.Link>
-                  <Nav.Link
-                    eventKey="workspace"
-                    onClick={() => {
-                      setActiveView('workspace');
-                      setSidebarOpen(false);
-                    }}
-                    disabled={!activeSession}
-                  >
-                    Workspace
-                  </Nav.Link>
+                  {isAdmin ? (
+                    <Nav.Link
+                      eventKey="users"
+                      onClick={() => {
+                        setActiveView('users');
+                        setSidebarOpen(false);
+                      }}
+                    >
+                      Gestão de usuários
+                    </Nav.Link>
+                  ) : null}
+                  {activeSession ? (
+                    <Nav.Link
+                      eventKey="workspace"
+                      onClick={() => {
+                        setActiveView('workspace');
+                        setSidebarOpen(false);
+                      }}
+                    >
+                      Workspace
+                    </Nav.Link>
+                  ) : null}
                 </Nav>
                 <hr />
                 <div className="text-muted small">
@@ -1269,7 +1438,7 @@ function App() {
                     <div>
                       <h5 className="mb-1">Gestão de usuários</h5>
                       <div className="text-muted small">
-                        Cadastre Gmail e nível de acesso: admin vê todos, user vê só o próprio.
+                        Insira, edite ou remova Gmails. Admin vê todos; user vê só o próprio.
                       </div>
                     </div>
                     <Button
@@ -1345,10 +1514,10 @@ function App() {
                                 size="sm"
                                 value={item.role}
                                 onChange={(event) => {
-                                  void saveAccessUser(
+                                  void handleChangeAccessUserRole(
                                     item.email,
                                     event.target.value as AccessRole,
-                                  ).then(refreshAccessUsers);
+                                  );
                                 }}
                               >
                                 <option value="user">user</option>
@@ -1462,119 +1631,163 @@ function App() {
                   {phase === 3 ? (
                     <>
                       <h5 className="mb-3">Etapa 3 – Diagrama</h5>
-                      <Stack direction="horizontal" gap={2} className="action-bar mb-3">
-                        <Button
-                          onClick={handleGenerateUml}
-                          disabled={
-                            generatingUml ||
-                            !useCases.length ||
-                            activeSession.statusText !== 'use_cases_validated'
-                          }
-                        >
-                          {generatingUml ? 'Gerando…' : 'Gerar diagrama'}
-                        </Button>
-                        <Button
-                          variant="outline-primary"
-                          onClick={handleSaveDiagramCode}
-                          disabled={savingDiagram || !plantuml.trim()}
-                        >
-                          {savingDiagram ? 'Salvando…' : 'Salvar código'}
-                        </Button>
-                        <Button
-                          variant="outline-secondary"
-                          onClick={handleDownloadDiagramXml}
-                          disabled={!diagram}
-                        >
-                          Baixar XML
-                        </Button>
-                        <Button
-                          variant="success"
-                          onClick={handleValidateUml}
-                          disabled={savingDiagram || !diagram || !plantuml.trim()}
-                        >
-                          Validar diagrama
-                        </Button>
-                        <div className="status-pill text-muted small ms-auto">
+                      <Stack direction="horizontal" gap={3} className="action-bar mb-3 flex-wrap">
+                        {canGenerateDiagram || generatingUml ? (
+                          <Button
+                            onClick={handleGenerateUml}
+                            disabled={generatingUml}
+                          >
+                            {generatingUml ? 'Gerando…' : 'Gerar diagrama'}
+                          </Button>
+                        ) : null}
+                        {canSaveDiagram || savingDiagram ? (
+                          <Button
+                            variant="outline-primary"
+                            onClick={handleSaveDiagramCode}
+                            disabled={savingDiagram}
+                          >
+                            {savingDiagram ? 'Salvando…' : 'Salvar diagrama'}
+                          </Button>
+                        ) : null}
+                        {canValidateDiagram ? (
+                          <Button
+                            variant="success"
+                            onClick={handleValidateUml}
+                            disabled={savingDiagram}
+                          >
+                            Validar diagrama
+                          </Button>
+                        ) : null}
+                        {canDownloadDiagram ? (
+                          <Button
+                            variant="outline-secondary"
+                            onClick={handleDownloadDiagramXml}
+                          >
+                            Baixar draw.io
+                          </Button>
+                        ) : null}
+                        <div className="status-pill text-muted small ms-md-auto">
                           status: <code>{getStatusLabel(activeSession.statusText)}</code>
                         </div>
                       </Stack>
 
                       {plantuml.trim() ? (
-                        <>
-                          {relationRows.length ? (
-                            <div className="mb-3">
-                              <div className="text-muted small mb-1">
-                                Relações include/extend editáveis
+                        <div className="diagram-stage-fullwidth">
+                          <Card className="diagram-editor-card mb-3">
+                            <Card.Header className="py-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
+                              <div>
+                                <strong>Editor visual</strong>
+                                <div className="text-muted small fw-normal">
+                                  Arraste nós, conecte com o tipo escolhido e use as ferramentas à
+                                  direita. A grade magnética (opcional) alinha ao soltar.
+                                </div>
                               </div>
-                              <Table bordered size="sm" responsive>
-                                <thead>
-                                  <tr>
-                                    <th>Origem</th>
-                                    <th>Tipo</th>
-                                    <th>Destino</th>
-                                    <th>Ação</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {relationRows.map((row) => (
-                                    <tr key={row.id}>
-                                      <td>{row.source}</td>
-                                      <td>
-                                        <Form.Select
-                                          value={row.type}
-                                          onChange={(e) =>
-                                            updateRelationType(
-                                              row.id,
-                                              e.target.value as 'include' | 'extend',
-                                            )
-                                          }
-                                        >
-                                          <option value="include">include</option>
-                                          <option value="extend">extend</option>
-                                        </Form.Select>
-                                      </td>
-                                      <td>{row.target}</td>
-                                      <td>
-                                        <Button
-                                          size="sm"
-                                          variant="outline-danger"
-                                          onClick={() => removeDiagramEdge(row.id)}
-                                        >
-                                          Remover
-                                        </Button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </Table>
-                            </div>
-                          ) : null}
+                              <div className="text-muted small">
+                                Atalhos: controles no canto inferior esquerdo; mini-mapa opcional.
+                              </div>
+                            </Card.Header>
+                            <Card.Body className="p-0">
+                              {diagram ? (
+                                <div className="diagram-toolbar border-bottom px-3 py-2 d-flex flex-wrap align-items-center gap-2">
+                                  <span className="text-muted small me-1">Nova conexão</span>
+                                  <Form.Select
+                                    size="sm"
+                                    className="edge-kind-select"
+                                    value={newEdgeKind}
+                                    onChange={(e) =>
+                                      setNewEdgeKind(e.target.value as NewEdgeKind)
+                                    }
+                                    aria-label="Tipo de nova conexão entre nós"
+                                  >
+                                    <option value="association">Associação (ator–UC)</option>
+                                    <option value="include">Include (UC–UC)</option>
+                                    <option value="extend">Extend (UC–UC)</option>
+                                  </Form.Select>
+                                  <Form.Check
+                                    type="switch"
+                                    id="diagram-snap-grid"
+                                    className="diagram-snap-switch mb-0"
+                                    checked={diagramSnapToGrid}
+                                    onChange={(e) => setDiagramSnapToGrid(e.target.checked)}
+                                    title="Ao arrastar, os nós alinham à malha de 16x16 px"
+                                    label="Grade magnética"
+                                  />
+                                  <ButtonGroup size="sm" className="ms-md-auto flex-wrap">
+                                    <Button
+                                      variant="outline-secondary"
+                                      onClick={handleFitDiagramView}
+                                      title="Recalcula o enquadramento do diagrama na área"
+                                    >
+                                      Encaixar na tela
+                                    </Button>
+                                    <Button
+                                      variant="outline-secondary"
+                                      onClick={handleRelayoutDiagram}
+                                      title="Reposiciona nós com base nas relações include/extend"
+                                    >
+                                      Reorganizar layout
+                                    </Button>
+                                    <Button
+                                      variant={diagramMiniMap ? 'secondary' : 'outline-secondary'}
+                                      onClick={() => setDiagramMiniMap((value) => !value)}
+                                    >
+                                      {diagramMiniMap ? 'Ocultar mini-mapa' : 'Mostrar mini-mapa'}
+                                    </Button>
+                                  </ButtonGroup>
+                                </div>
+                              ) : null}
 
-                          <Row className="g-3">
-                            <Col md={6}>
-                              <Form.Label>PlantUML salvo no Firestore</Form.Label>
-                              <Form.Control
-                                as="textarea"
-                                rows={12}
-                                value={plantuml}
-                                onChange={(e) => handlePlantumlChange(e.target.value)}
-                              />
-                            </Col>
-                            <Col md={6}>
-                              <Stack direction="horizontal" gap={2} className="action-bar mb-2">
-                                <div className="text-muted small">Edição gráfica</div>
-                                <Form.Select
-                                  size="sm"
-                                  className="edge-kind-select ms-auto"
-                                  value={newEdgeKind}
-                                  onChange={(e) => setNewEdgeKind(e.target.value as NewEdgeKind)}
-                                >
-                                  <option value="association">Nova conexão: associação</option>
-                                  <option value="include">Nova conexão: include</option>
-                                  <option value="extend">Nova conexão: extend</option>
-                                </Form.Select>
-                              </Stack>
-                              <div className="diagram-canvas border rounded">
+                              {relationRows.length ? (
+                                <div className="px-3 py-3 border-bottom bg-body-tertiary">
+                                  <div className="text-muted small mb-2 fw-semibold">
+                                    Relações include / extend (edição rápida)
+                                  </div>
+                                  <Table bordered size="sm" responsive className="mb-0 bg-white">
+                                    <thead>
+                                      <tr>
+                                        <th>Origem</th>
+                                        <th>Tipo</th>
+                                        <th>Destino</th>
+                                        <th>Ação</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {relationRows.map((row) => (
+                                        <tr key={row.id}>
+                                          <td>{row.source}</td>
+                                          <td>
+                                            <Form.Select
+                                              value={row.type}
+                                              onChange={(e) =>
+                                                updateRelationType(
+                                                  row.id,
+                                                  e.target.value as 'include' | 'extend',
+                                                )
+                                              }
+                                              aria-label={`Tipo da relação ${row.source} → ${row.target}`}
+                                            >
+                                              <option value="include">include</option>
+                                              <option value="extend">extend</option>
+                                            </Form.Select>
+                                          </td>
+                                          <td>{row.target}</td>
+                                          <td>
+                                            <Button
+                                              size="sm"
+                                              variant="outline-danger"
+                                              onClick={() => removeDiagramEdge(row.id)}
+                                            >
+                                              Remover aresta
+                                            </Button>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </Table>
+                                </div>
+                              ) : null}
+
+                              <div className="diagram-canvas diagram-canvas--expanded border-top">
                                 {diagram ? (
                                   <ReactFlow
                                     nodes={diagram.nodes}
@@ -1598,24 +1811,73 @@ function App() {
                                       }));
                                     }}
                                     onConnect={onConnect}
-                                    fitView
+                                    elevateEdgesOnSelect
+                                    minZoom={0.12}
+                                    maxZoom={1.85}
+                                    deleteKeyCode={['Backspace', 'Delete']}
+                                    connectionLineStyle={{ strokeWidth: 2 }}
+                                    snapToGrid={diagramSnapToGrid}
+                                    snapGrid={DIAGRAM_SNAP_GRID}
                                   >
-                                    <Background />
+                                    <DiagramFitView revision={diagramLayoutRevision} />
+                                    <Background
+                                      gap={diagramSnapToGrid ? DIAGRAM_SNAP_GRID[0] : 20}
+                                    />
                                     <Controls />
+                                    {diagramMiniMap ? (
+                                      <MiniMap
+                                        zoomable
+                                        pannable
+                                        nodeColor={minimapNodeColor}
+                                        maskColor="rgba(15, 23, 42, 0.12)"
+                                        style={{ height: 120, width: 180 }}
+                                      />
+                                    ) : null}
+                                    <Panel
+                                      position="top-right"
+                                      className="diagram-floating-panel m-2"
+                                    >
+                                      <div className="text-muted small text-end bg-white border rounded shadow-sm px-2 py-1">
+                                        Arraste para mover · Delete remove aresta selecionada ·
+                                        Arestas ficam atrás dos nós; selecione uma para destacar
+                                        {diagramSnapToGrid ? (
+                                          <> · Malha {DIAGRAM_SNAP_GRID[0]} px</>
+                                        ) : null}
+                                      </div>
+                                    </Panel>
                                   </ReactFlow>
                                 ) : (
                                   <div className="p-3 text-muted">
-                                    Gere ou cole PlantUML acima para editar.
+                                    Ajuste o PlantUML abaixo até o preview voltar a ser válido.
                                   </div>
                                 )}
                               </div>
-                              <div className="text-muted small mt-2">
-                                O modelo gráfico fica salvo junto para preservar ajustes manuais de
-                                posição.
-                              </div>
-                            </Col>
-                          </Row>
-                        </>
+                            </Card.Body>
+                          </Card>
+
+                          <div className="diagram-code-block mb-2">
+                            <Form.Label className="fw-semibold">
+                              PlantUML (código — largura total)
+                            </Form.Label>
+                            <Form.Control
+                              as="textarea"
+                              rows={14}
+                              value={plantuml}
+                              onChange={(e) => handlePlantumlChange(e.target.value)}
+                              spellCheck={false}
+                              className="diagram-plantuml-input font-monospace"
+                              aria-label="Código PlantUML do diagrama"
+                            />
+                            <div className="text-muted small mt-2">
+                              Alterações no canvas ou no PlantUML são{' '}
+                              <strong>gravadas automaticamente</strong> na sessão após cerca de 1 s
+                              (sem mudar o status da etapa). <strong>Salvar código</strong> força
+                              gravação imediata com o mesmo conteúdo. No PDF, o diagrama usa uma
+                              página dedicada em tela cheia. Use <strong>Reorganizar layout</strong>{' '}
+                              para recomputar posições.
+                            </div>
+                          </div>
+                        </div>
                       ) : (
                         <Alert variant="secondary">
                           Valide as UCs (Etapa 2) para liberar a geração do diagrama.
@@ -1665,22 +1927,6 @@ function App() {
             <Button onClick={handleLogin} className="signed-out-panel__action">
               Entrar com Google
             </Button>
-            {demoAuthEnabled ? (
-              <div className="demo-login-panel mt-3">
-                <div className="text-muted small mb-2">Acesso demo</div>
-                <Stack direction="horizontal" gap={2} className="flex-wrap">
-                  {DEMO_USERS.map((profile) => (
-                    <Button
-                      key={profile.uid}
-                      variant={profile.admin ? 'outline-primary' : 'outline-secondary'}
-                      onClick={() => handleDemoLogin(profile)}
-                    >
-                      {profile.displayName} ({profile.admin ? 'admin' : 'user'})
-                    </Button>
-                  ))}
-                </Stack>
-              </div>
-            ) : null}
           </section>
         )}
       </Container>

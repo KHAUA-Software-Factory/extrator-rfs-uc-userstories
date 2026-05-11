@@ -26,7 +26,6 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       NODE_VERSION: 22
       FRONTEND_PUBLIC_PATH: /
-      FRONTEND_DEMO_AUTH: '1'
       FRONTEND_REMOTE_DIR: public_html/ms
 
     defaults:
@@ -43,8 +42,6 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Criar .env.production
-        env:
-          VITE_DEMO_AUTH: ${{ secrets.VITE_DEMO_AUTH }}
         run: |
           touch .env.production
           echo "VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}" >> .env.production
@@ -54,8 +51,8 @@ jobs:
           echo "VITE_OPENAI_API_KEY=${{ secrets.VITE_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}" >> .env.production
           echo "VITE_OPENAI_MODEL=${{ secrets.VITE_OPENAI_MODEL || secrets.OPENAI_MODEL }}" >> .env.production
           echo "VITE_OPENAI_BASE_URL=${{ secrets.VITE_OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}" >> .env.production
-          echo "VITE_DEMO_AUTH=${VITE_DEMO_AUTH:-${FRONTEND_DEMO_AUTH}}" >> .env.production
           echo "VITE_BASE_PATH=${FRONTEND_PUBLIC_PATH}" >> .env.production
+          echo "VITE_BOOTSTRAP_ADMIN_EMAILS=${{ secrets.VITE_BOOTSTRAP_ADMIN_EMAILS }}" >> .env.production
 
       - name: Instalar dependências
         run: npm ci
