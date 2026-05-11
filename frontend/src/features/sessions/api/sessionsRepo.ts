@@ -161,8 +161,6 @@ export async function listMySessions(): Promise<SessionListItem[]> {
 }
 
 export async function listAllSessionsAsAdmin(): Promise<SessionListItem[]> {
-  const snapshot = await getDocs(
-    query(collectionGroup(db, 'sessions'), orderBy('updatedAtText', 'desc')),
-  );
+  const snapshot = await getDocs(collectionGroup(db, 'sessions'));
   return snapshot.docs.map((item) => mapSessionListItem(item, '')).sort(sortByUpdatedAtDesc);
 }

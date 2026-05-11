@@ -55,6 +55,11 @@ service cloud.firestore {
       allow read, write: if hasAdminAccess() || (isOwner(uid) && hasAnyAccess());
     }
 
+    match /{path=**}/sessions/{sessionId} {
+      // Necessario para listagem admin via collectionGroup('sessions').
+      allow read: if hasAdminAccess();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
