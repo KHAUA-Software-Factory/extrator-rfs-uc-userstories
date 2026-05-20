@@ -21,8 +21,8 @@ type NodeBox = {
   isUseCase: boolean;
 };
 
-const ACTOR_WIDTH = 172;
-const ACTOR_HEIGHT = 54;
+const ACTOR_WIDTH = 132;
+const ACTOR_HEIGHT = 112;
 const USE_CASE_WIDTH = 248;
 const USE_CASE_HEIGHT = 66;
 
@@ -150,6 +150,7 @@ function StaticDiagram({ diagram }: { diagram: DiagramModel | null }) {
   const height = maxY - minY + padding * 2;
   const boxById = new Map(boxes.map((box) => [box.id, shiftBox(box, offsetX, offsetY)]));
   const systemBounds = getSystemBounds(useCaseBoxes.map((box) => shiftBox(box, offsetX, offsetY)));
+  const laneInfo = computeEdgeLanes(diagram.edges);
 
   return (
     <svg
@@ -160,7 +161,7 @@ function StaticDiagram({ diagram }: { diagram: DiagramModel | null }) {
     >
       <defs>
         <marker
-          id="report-diagram-arrow"
+          id="report-diagram-arrow-include"
           markerHeight="8"
           markerWidth="8"
           orient="auto"
@@ -168,7 +169,24 @@ function StaticDiagram({ diagram }: { diagram: DiagramModel | null }) {
           refY="4"
           viewBox="0 0 8 8"
         >
-          <path d="M 0 0 L 8 4 L 0 8 z" />
+          <path
+            className="print-report__arrow print-report__arrow--include"
+            d="M 0 0 L 8 4 L 0 8 z"
+          />
+        </marker>
+        <marker
+          id="report-diagram-arrow-extend"
+          markerHeight="8"
+          markerWidth="8"
+          orient="auto"
+          refX="8"
+          refY="4"
+          viewBox="0 0 8 8"
+        >
+          <path
+            className="print-report__arrow print-report__arrow--extend"
+            d="M 0 0 L 8 4 L 0 8 z"
+          />
         </marker>
       </defs>
 
@@ -196,8 +214,10 @@ function StaticDiagram({ diagram }: { diagram: DiagramModel | null }) {
         const target = boxById.get(String(edge.target));
         if (!source || !target) return null;
         const relationType = getRelationType(edge);
-        const path = edgePath(source, target);
-        const labelPoint = getLabelPoint(source, target);
+        const edgeKey = String(edge.id || `${edge.source}->${edge.target}`);
+        const lane = laneInfo.get(edgeKey) || { index: 0, count: 1 };
+        const path = edgePath(source, target, lane.index, lane.count);
+        const labelPoint = getLabelPoint(source, target, lane.index, lane.count);
 
         return (
           <g key={String(edge.id)}>
@@ -205,14 +225,18 @@ function StaticDiagram({ diagram }: { diagram: DiagramModel | null }) {
               className={
                 relationType === 'association'
                   ? 'print-report__edge print-report__edge--association'
-                  : 'print-report__edge print-report__edge--relation'
+                  : `print-report__edge print-report__edge--relation print-report__edge--${relationType}`
               }
               d={path}
-              markerEnd={relationType === 'association' ? undefined : 'url(#report-diagram-arrow)'}
+              markerEnd={
+                relationType === 'association'
+                  ? undefined
+                  : `url(#report-diagram-arrow-${relationType})`
+              }
             />
             {relationType === 'association' ? null : (
               <text
-                className="print-report__edge-label"
+                className={`print-report__edge-label print-report__edge-label--${relationType}`}
                 x={labelPoint.x}
                 y={labelPoint.y - 6}
                 textAnchor="middle"
@@ -235,30 +259,57 @@ function StaticDiagram({ diagram }: { diagram: DiagramModel | null }) {
               ry={box.height / 2}
             />
           ) : (
-            <rect
-              className="print-report__node print-report__node--actor"
-              x={box.x}
-              y={box.y}
-              width={box.width}
-              height={box.height}
-              rx="8"
-            />
+            <ActorShape box={box} />
           )}
-          <text
-            className="print-report__node-label"
-            x={box.x + box.width / 2}
-            y={box.y + box.height / 2 - (wrapText(box.label).length - 1) * 8}
-            textAnchor="middle"
-          >
-            {wrapText(box.label).map((line, index) => (
-              <tspan x={box.x + box.width / 2} dy={index === 0 ? 0 : 16} key={line}>
-                {line}
-              </tspan>
-            ))}
-          </text>
+          {box.isUseCase ? (
+            <text
+              className="print-report__node-label"
+              x={box.x + box.width / 2}
+              y={box.y + box.height / 2 - (wrapText(box.label).length - 1) * 8}
+              textAnchor="middle"
+            >
+              {wrapText(box.label).map((line, index) => (
+                <tspan x={box.x + box.width / 2} dy={index === 0 ? 0 : 16} key={line}>
+                  {line}
+                </tspan>
+              ))}
+            </text>
+          ) : null}
         </g>
       ))}
     </svg>
+  );
+}
+
+function ActorShape({ box }: { box: NodeBox }) {
+  const centerX = box.x + box.width / 2;
+  const headY = box.y + 16;
+  const bodyTop = box.y + 29;
+  const bodyBottom = box.y + 58;
+  const armY = box.y + 42;
+  const footY = box.y + 84;
+  const labelLines = wrapText(box.label).slice(0, 2);
+
+  return (
+    <>
+      <circle className="print-report__actor-head" cx={centerX} cy={headY} r="10" />
+      <path
+        className="print-report__actor-line"
+        d={[
+          `M ${centerX} ${bodyTop} L ${centerX} ${bodyBottom}`,
+          `M ${centerX - 22} ${armY} L ${centerX + 22} ${armY}`,
+          `M ${centerX} ${bodyBottom} L ${centerX - 18} ${footY}`,
+          `M ${centerX} ${bodyBottom} L ${centerX + 18} ${footY}`,
+        ].join(' ')}
+      />
+      <text className="print-report__actor-label" x={centerX} y={box.y + box.height - 18}>
+        {labelLines.map((line, index) => (
+          <tspan x={centerX} dy={index === 0 ? 0 : 13} key={line}>
+            {line}
+          </tspan>
+        ))}
+      </text>
+    </>
   );
 }
 
@@ -299,45 +350,102 @@ function getSystemBounds(boxes: NodeBox[]) {
   };
 }
 
-function edgePath(source: NodeBox, target: NodeBox) {
-  const sourceCenter = center(source);
-  const targetCenter = center(target);
-
-  if (Math.abs(sourceCenter.x - targetCenter.x) < 40) {
-    const sourceAbove = sourceCenter.y < targetCenter.y;
-    const start = {
-      x: sourceCenter.x,
-      y: sourceAbove ? source.y + source.height : source.y,
-    };
-    const end = {
-      x: targetCenter.x,
-      y: sourceAbove ? target.y : target.y + target.height,
-    };
-    const controlY = (start.y + end.y) / 2;
-    return `M ${start.x} ${start.y} C ${start.x} ${controlY}, ${end.x} ${controlY}, ${end.x} ${end.y}`;
+function computeEdgeLanes(
+  edges: ReadonlyArray<{ id?: unknown; source: unknown; target: unknown }>,
+): Map<string, { index: number; count: number }> {
+  const groups = new Map<string, Array<{ id: string; target: string }>>();
+  for (const edge of edges) {
+    const source = String(edge.source);
+    const target = String(edge.target);
+    const id = String(edge.id ?? `${source}->${target}`);
+    if (!groups.has(source)) groups.set(source, []);
+    groups.get(source)!.push({ id, target });
   }
-
-  const sourceOnLeft = sourceCenter.x < targetCenter.x;
-  const start = {
-    x: sourceOnLeft ? source.x + source.width : source.x,
-    y: sourceCenter.y,
-  };
-  const end = {
-    x: sourceOnLeft ? target.x : target.x + target.width,
-    y: targetCenter.y,
-  };
-  const curve = Math.max(60, Math.abs(end.x - start.x) * 0.42);
-  const direction = sourceOnLeft ? 1 : -1;
-  return `M ${start.x} ${start.y} C ${start.x + curve * direction} ${start.y}, ${end.x - curve * direction} ${end.y}, ${end.x} ${end.y}`;
+  const result = new Map<string, { index: number; count: number }>();
+  for (const group of groups.values()) {
+    group.sort((a, b) => a.target.localeCompare(b.target));
+    const count = group.length;
+    group.forEach((entry, index) => result.set(entry.id, { index, count }));
+  }
+  return result;
 }
 
-function getLabelPoint(source: NodeBox, target: NodeBox) {
-  const sourceCenter = center(source);
-  const targetCenter = center(target);
+function pickAnchor(source: NodeBox, target: NodeBox) {
+  const sc = center(source);
+  const tc = center(target);
+  const dx = tc.x - sc.x;
+  const dy = tc.y - sc.y;
+  const horizontal = Math.abs(dx) >= Math.abs(dy);
+
+  if (horizontal) {
+    const sourceX = dx >= 0 ? source.x + source.width : source.x;
+    const targetX = dx >= 0 ? target.x : target.x + target.width;
+    return {
+      sx: sourceX,
+      sy: sc.y,
+      tx: targetX,
+      ty: tc.y,
+      sTan: dx >= 0 ? { x: 1, y: 0 } : { x: -1, y: 0 },
+      tTan: dx >= 0 ? { x: -1, y: 0 } : { x: 1, y: 0 },
+    };
+  }
+  const sourceY = dy >= 0 ? source.y + source.height : source.y;
+  const targetY = dy >= 0 ? target.y : target.y + target.height;
   return {
-    x: (sourceCenter.x + targetCenter.x) / 2,
-    y: (sourceCenter.y + targetCenter.y) / 2,
+    sx: sc.x,
+    sy: sourceY,
+    tx: tc.x,
+    ty: targetY,
+    sTan: dy >= 0 ? { x: 0, y: 1 } : { x: 0, y: -1 },
+    tTan: dy >= 0 ? { x: 0, y: -1 } : { x: 0, y: 1 },
   };
+}
+
+function buildEdgeGeometry(
+  source: NodeBox,
+  target: NodeBox,
+  laneIndex: number,
+  laneCount: number,
+) {
+  const { sx, sy, tx, ty, sTan, tTan } = pickAnchor(source, target);
+  const dx = tx - sx;
+  const dy = ty - sy;
+  const distance = Math.hypot(dx, dy);
+  if (distance < 1) {
+    return {
+      path: `M ${sx} ${sy} L ${tx} ${ty}`,
+      labelX: sx,
+      labelY: sy,
+    };
+  }
+
+  const tangentOffset = Math.max(36, Math.min(150, distance * 0.24));
+  const center = (laneCount - 1) / 2;
+  const t = laneCount > 1 ? (laneIndex - center) / center : 0;
+  const lateralMagnitude = Math.max(36, Math.min(140, distance * 0.22));
+  const lateral = t * lateralMagnitude;
+  const perpX = -dy / distance;
+  const perpY = dx / distance;
+
+  const c1x = sx + sTan.x * tangentOffset + perpX * lateral;
+  const c1y = sy + sTan.y * tangentOffset + perpY * lateral;
+  const c2x = tx + tTan.x * tangentOffset + perpX * lateral;
+  const c2y = ty + tTan.y * tangentOffset + perpY * lateral;
+
+  return {
+    path: `M ${sx} ${sy} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${tx} ${ty}`,
+    labelX: (sx + tx) / 2 + perpX * lateral * 0.7,
+    labelY: (sy + ty) / 2 + perpY * lateral * 0.7,
+  };
+}
+
+function edgePath(source: NodeBox, target: NodeBox, laneIndex: number, laneCount: number) {
+  return buildEdgeGeometry(source, target, laneIndex, laneCount).path;
+}
+
+function getLabelPoint(source: NodeBox, target: NodeBox, laneIndex: number, laneCount: number) {
+  const { labelX, labelY } = buildEdgeGeometry(source, target, laneIndex, laneCount);
+  return { x: labelX, y: labelY };
 }
 
 function center(box: NodeBox) {

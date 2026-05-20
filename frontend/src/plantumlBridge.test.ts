@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildDiagramModelFromUseCases,
-  diagramModelToDrawioXml,
   diagramModelToPlantuml,
   plantumlToDiagramModel,
   relayoutDiagramModel,
+  relayoutDiagramModelWithGraphviz,
 } from './plantumlBridge';
+import {
+  getUseCaseDiagramPdfPageSize,
+  renderUseCaseDiagramSvg,
+} from './features/analysis/report/model/useCaseDiagramRenderer';
 
 describe('plantumlBridge', () => {
   it('parses minimal PlantUML and round-trips', () => {
@@ -70,10 +74,9 @@ describe('plantumlBridge', () => {
     expect(plantuml).toContain('UC003 ..> UC002 : <<extend>>');
 
     const pos = (id: string) => model.nodes.find((node) => node.id === id)!.position;
-    // Include: UC002 → UC001 coloca o caso incluído à direita (fluxo LTR).
-    expect(pos('UC001').x).toBeGreaterThan(pos('UC002').x);
-    // Extend: UC003 → UC002 coloca o estendido à direita da base.
-    expect(pos('UC002').x).toBeGreaterThan(pos('UC003').x);
+    // Layout 360°: UCs ficam empilhadas em grade central; UC001 (1ª) acima de UC002 (2ª) acima de UC003 (3ª).
+    expect(pos('UC001').y).toBeLessThan(pos('UC002').y);
+    expect(pos('UC002').y).toBeLessThan(pos('UC003').y);
 
     const relayouted = relayoutDiagramModel(model);
     expect(relayouted.nodes.map((node) => node.id)).toEqual(model.nodes.map((node) => node.id));
@@ -95,10 +98,7 @@ describe('plantumlBridge', () => {
     const W = 248;
     const H = 66;
     const pad = 4;
-    function overlaps(
-      a: { x: number; y: number },
-      b: { x: number; y: number; id?: string },
-    ) {
+    function overlaps(a: { x: number; y: number }, b: { x: number; y: number; id?: string }) {
       return !(
         a.x + W + pad <= b.x ||
         b.x + W + pad <= a.x ||
@@ -118,11 +118,11 @@ describe('plantumlBridge', () => {
     const assoc = model.edges.filter((e) => !String(e.label || '').includes('<<'));
     const rel = model.edges.filter((e) => String(e.label || '').includes('<<'));
     expect(assoc.length).toBeGreaterThan(0);
-    expect(assoc.every((e) => e.type === 'straight')).toBe(true);
-    expect(rel.every((e) => e.type === 'default')).toBe(true);
+    expect(assoc.every((e) => e.type === 'smoothCurve')).toBe(true);
+    expect(rel.every((e) => e.type === 'smoothCurve')).toBe(true);
   });
 
-  it('coloca UCs de atores diferentes em faixas horizontais separadas', () => {
+  it('posiciona atores em lados opostos do sistema (layout 360°)', () => {
     const model = buildDiagramModelFromUseCases(
       [
         {
@@ -150,9 +150,18 @@ describe('plantumlBridge', () => {
       'Sistema',
     );
 
-    const pos = (id: string) => model.nodes.find((n) => n.id === id)!.position;
-    expect(pos('UC003').x).toBeGreaterThan(pos('UC001').x);
-    expect(pos('UC003').x).toBeGreaterThan(pos('UC002').x);
+    const actorNodes = model.nodes.filter((node) => !String(node.id).startsWith('UC'));
+    expect(actorNodes).toHaveLength(2);
+    const sortedByX = [...actorNodes].sort((a, b) => a.position.x - b.position.x);
+    // Com dois atores e UCs centrais, eles devem ficar em lados opostos
+    // (um à esquerda do bloco de UCs, outro à direita).
+    const ucXs = model.nodes
+      .filter((node) => String(node.id).startsWith('UC'))
+      .map((node) => node.position.x);
+    const minUcX = Math.min(...ucXs);
+    const maxUcX = Math.max(...ucXs);
+    expect(sortedByX[0]!.position.x).toBeLessThan(minUcX);
+    expect(sortedByX[1]!.position.x).toBeGreaterThan(maxUcX);
   });
 
   it('parses PlantUML with UC ids beyond three digits', () => {
@@ -206,21 +215,131 @@ describe('plantumlBridge', () => {
     }
   });
 
-  it('exports diagrams.net XML', () => {
+  it('respeita a ordem de execução das UCs ao plotar o diagrama', () => {
+    const model = buildDiagramModelFromUseCases(
+      [
+        {
+          id: 'UC001',
+          nome: 'Efetuar login',
+          ator_principal: 'Cliente',
+          objetivo: '',
+          relacoes: [],
+        },
+        {
+          id: 'UC002',
+          nome: 'Listar pedidos',
+          ator_principal: 'Cliente',
+          objetivo: '',
+          relacoes: [],
+        },
+        {
+          id: 'UC003',
+          nome: 'Pagar pedido',
+          ator_principal: 'Cliente',
+          objetivo: '',
+          relacoes: [],
+        },
+      ],
+      'Sistema',
+    );
+
+    const pos = (id: string) => model.nodes.find((n) => n.id === id)!.position;
+    // No layout de tela, y cresce para baixo: UC001 deve ficar acima de UC002 e UC003.
+    expect(pos('UC001').y).toBeLessThan(pos('UC002').y);
+    expect(pos('UC002').y).toBeLessThan(pos('UC003').y);
+
+    // PlantUML preserva a sequência das UCs.
+    const plantuml = diagramModelToPlantuml(model);
+    const ucOrder = ['UC001', 'UC002', 'UC003'].map((id) => plantuml.indexOf(id));
+    expect(ucOrder.every((index, i) => i === 0 || index > ucOrder[i - 1]!)).toBe(true);
+  });
+
+  it('normaliza arestas antigas (smoothstep/straight) para curvas suaves ao reabrir', () => {
+    const input = [
+      '@startuml',
+      'actor "Cliente" as cliente',
+      'rectangle "Sistema" {',
+      '  usecase "Consultar pedidos" as UC001',
+      '  usecase "Exportar pedidos" as UC002',
+      '}',
+      'cliente -- UC001',
+      'UC002 ..> UC001 : <<include>>',
+      '@enduml',
+    ].join('\n');
+
+    const model = plantumlToDiagramModel(input);
+    expect(model.edges.length).toBe(2);
+    expect(model.edges.every((edge) => edge.type === 'smoothCurve')).toBe(true);
+    const includeEdge = model.edges.find((edge) => String(edge.label || '').includes('include'));
+    expect(includeEdge?.label).toBe('<<include>>');
+    expect(includeEdge?.data).toMatchObject({ relationType: 'include' });
+  });
+
+  it('renderiza o SVG final com curvas visíveis nos relacionamentos', async () => {
     const model = buildDiagramModelFromUseCases([
       {
         id: 'UC001',
-        nome: 'Efetuar login',
+        nome: 'Consultar pedidos',
         ator_principal: 'Cliente',
-        objetivo: 'Acessar a conta',
+        objetivo: '',
         relacoes: [],
       },
     ]);
 
-    const xml = diagramModelToDrawioXml(model);
+    const { svg } = await renderUseCaseDiagramSvg(model);
+    const match = svg.match(/<path d="([^"]+)" fill="none" stroke="#94a3b8"/);
+    expect(match?.[1]).toContain(' C ');
 
-    expect(xml).toContain('<mxfile');
-    expect(xml).toContain('UC001');
-    expect(xml).toContain('Efetuar login');
+    const numbers = match![1].match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+    const [sx, sy, c1x, c1y, c2x, c2y, tx, ty] = numbers;
+    const distanceToLine = (x: number, y: number) =>
+      Math.abs((ty! - sy!) * x - (tx! - sx!) * y + tx! * sy! - ty! * sx!) /
+      Math.hypot(ty! - sy!, tx! - sx!);
+
+    expect(Math.max(distanceToLine(c1x!, c1y!), distanceToLine(c2x!, c2y!))).toBeGreaterThan(1);
+  });
+
+  it('usa Graphviz para espaçar diagramas grandes com muitos include', async () => {
+    const useCases = Array.from({ length: 42 }, (_, index) => {
+      const id = `UC${String(index + 1).padStart(3, '0')}`;
+      return {
+        id,
+        nome: `Caso de uso ${index + 1}`,
+        ator_principal: 'Usuario',
+        objetivo: '',
+        relacoes:
+          index === 0
+            ? []
+            : [
+                {
+                  tipo: 'include' as const,
+                  destino: `UC${String(Math.max(1, Math.floor((index + 1) / 2))).padStart(3, '0')}`,
+                  condicao: '',
+                },
+              ],
+      };
+    });
+    const model = await relayoutDiagramModelWithGraphviz(
+      buildDiagramModelFromUseCases(useCases, 'Sistema'),
+    );
+    const ucNodes = model.nodes.filter((node) => String(node.id).startsWith('UC'));
+    const xs = ucNodes.map((node) => node.position.x);
+    const ys = ucNodes.map((node) => node.position.y);
+
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(900);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(900);
+    expect(model.edges.every((edge) => edge.type === 'smoothCurve')).toBe(true);
+  });
+
+  it('aumenta a pagina do PDF quando o diagrama final e grande', () => {
+    const smallPage = getUseCaseDiagramPdfPageSize(600, 360);
+    expect(smallPage.width).toBeCloseTo(841.89);
+    expect(smallPage.height).toBeCloseTo(595.28);
+
+    const largePage = getUseCaseDiagramPdfPageSize(2600, 1400);
+    expect(largePage.width).toBeGreaterThan(841.89);
+    expect(largePage.height).toBeGreaterThan(595.28);
+    expect(largePage.width).toBeLessThanOrEqual(2383.94);
+    expect(largePage.height).toBeLessThanOrEqual(1683.78);
   });
 });

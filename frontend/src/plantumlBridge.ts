@@ -9,62 +9,43 @@ export type DiagramModel = {
   edges: Edge[];
 };
 
-const ACTOR_WIDTH = 172;
-const ACTOR_HEIGHT = 54;
+const ACTOR_WIDTH = 132;
+const ACTOR_HEIGHT = 112;
 const USE_CASE_WIDTH = 248;
 const USE_CASE_HEIGHT = 66;
-const VERTICAL_GAP = 104;
 const UC_TOP_MARGIN = 34;
-const ACTOR_LEFT_X = 24;
-/** Espaço horizontal mínimo entre cantos esquerdo de dois UCs na mesma faixa. */
-const UC_HORIZONTAL_STRIDE = USE_CASE_WIDTH + 36;
-const LAYER_GROUP_GAP = 48;
-const ZONE_ACTOR_TO_UC_GAP = 28;
-const ZONE_BETWEEN_ACTORS_GAP = 56;
-const ZONE_ROW_WRAP_WIDTH = 5200;
-const ZONE_ROW_VERTICAL_GAP = 72;
-/** Acima disso, abre uma 2ª coluna na mesma faixa (evita listas infinitas, mantém associações curtas). */
-const MAX_UC_ROWS_SINGLE_COLUMN = 28;
-const OVERLAP_PADDING = 14;
+const INCLUDE_EDGE_COLOR = '#dc2626';
+const EXTEND_EDGE_COLOR = '#0f766e';
 
 const actorNodeStyle = {
   width: ACTOR_WIDTH,
-  minHeight: ACTOR_HEIGHT,
-  border: '1px solid #94a3b8',
-  borderRadius: 8,
-  background: '#f8fafc',
+  height: ACTOR_HEIGHT,
+  border: '0',
+  background: 'transparent',
   color: '#1f2937',
-  fontWeight: 650,
-  padding: '10px 12px',
-  textAlign: 'center',
-  whiteSpace: 'normal',
+  padding: 0,
 } satisfies CSSProperties;
 
 const useCaseNodeStyle = {
   width: USE_CASE_WIDTH,
-  minHeight: USE_CASE_HEIGHT,
-  border: '2px solid #2563eb',
-  borderRadius: 999,
-  background: '#ffffff',
-  color: '#172033',
-  fontWeight: 600,
-  padding: '12px 18px',
-  textAlign: 'center',
-  whiteSpace: 'normal',
+  height: USE_CASE_HEIGHT,
+  border: 0,
+  background: 'transparent',
+  padding: 0,
 } satisfies CSSProperties;
 
 const associationEdgeStyle = {
-  stroke: '#64748b',
-  strokeWidth: 1.15,
-  opacity: 0.38,
+  stroke: '#94a3b8',
+  strokeWidth: 1.5,
+  opacity: 0.85,
 } satisfies CSSProperties;
 
 function relationEdgeStyle(type: 'include' | 'extend') {
   return {
-    stroke: type === 'include' ? '#2563eb' : '#7c3aed',
-    strokeWidth: 1.35,
-    strokeDasharray: '7 5',
-    opacity: 0.42,
+    stroke: type === 'include' ? INCLUDE_EDGE_COLOR : EXTEND_EDGE_COLOR,
+    strokeWidth: 2,
+    strokeDasharray: '6 5',
+    opacity: 0.92,
   } satisfies CSSProperties;
 }
 
@@ -229,21 +210,38 @@ export function diagramModelToPlantuml(model: DiagramModel): string {
 }
 
 /**
- * Recalcula apenas posições (mantém ids, labels, estilos e arestas) usando o mesmo
- * algoritmo de camadas usado na geração inicial — útil após edições manuais no canvas.
+ * Recalcula posições mantendo ids, labels e arestas. A ordem dos nós no modelo
+ * é preservada para que UCs com ordem de execução sigam a sequência na grade.
  */
 export function relayoutDiagramModel(model: DiagramModel): DiagramModel {
   const actorMap = new Map<string, string>();
   const useCaseMap = new Map<string, string>();
+  const orderedUseCaseIds: string[] = [];
+  const orderedActorIds: string[] = [];
 
   for (const node of model.nodes) {
     const id = String(node.id);
     const label = String((node.data as { label?: unknown } | undefined)?.label || id);
-    if (id.startsWith('UC')) useCaseMap.set(id, label);
-    else actorMap.set(id, label);
+    if (id.startsWith('UC')) {
+      useCaseMap.set(id, label);
+      orderedUseCaseIds.push(id);
+    } else {
+      actorMap.set(id, label);
+      orderedActorIds.push(id);
+    }
   }
 
-  const positions = computeDiagramPositions(actorMap, useCaseMap, model.edges);
+  // Agrupa UCs por cadeias de include/extend: UCs relacionadas ficam vizinhas
+  // na ordem de plotagem, reduzindo o comprimento e o cruzamento dos
+  // relacionamentos no diagrama final.
+  const clusteredUseCaseIds = clusterUseCasesByRelations(orderedUseCaseIds, model.edges);
+
+  const positions = computeDiagramPositions(
+    actorMap,
+    useCaseMap,
+    clusteredUseCaseIds,
+    orderedActorIds,
+  );
 
   return {
     ...model,
@@ -252,54 +250,78 @@ export function relayoutDiagramModel(model: DiagramModel): DiagramModel {
       if (!next) return node;
       return { ...node, position: next };
     }),
+    edges: model.edges.map(normalizeDiagramEdgeVisuals),
   };
 }
 
-export function diagramModelToDrawioXml(model: DiagramModel): string {
-  const nodes = model.nodes.map((node) => {
-    const isUseCase = String(node.id).startsWith('UC');
-    const geometry = getNodeGeometry(node);
-    const style = isUseCase
-      ? 'ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2563eb;strokeWidth=2;fontStyle=1;'
-      : 'rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#94a3b8;fontStyle=1;';
+/**
+ * Reordena os UCs de modo que cada cluster conectado por `<<include>>`/`<<extend>>`
+ * apareça contiguamente na sequência. UCs sem nenhum relacionamento permanecem
+ * na ordem original. Heurística simples (BFS por componente conectado) mas
+ * suficiente para encurtar drasticamente as arestas em diagramas grandes.
+ */
+function clusterUseCasesByRelations(ucIds: string[], edges: Edge[]): string[] {
+  if (ucIds.length <= 2) return ucIds;
+  const ucSet = new Set(ucIds);
+  const adjacency = new Map<string, Set<string>>();
+  for (const id of ucIds) adjacency.set(id, new Set());
 
-    return [
-      `        <mxCell id="${escapeXml(String(node.id))}" value="${escapeXml(getNodeLabel(node))}" style="${style}" vertex="1" parent="1">`,
-      `          <mxGeometry x="${geometry.x}" y="${geometry.y}" width="${geometry.width}" height="${geometry.height}" as="geometry" />`,
-      '        </mxCell>',
-    ].join('\n');
-  });
+  for (const edge of edges) {
+    const relation = getEdgeRelationType(edge);
+    if (relation === 'association') continue;
+    const a = String(edge.source);
+    const b = String(edge.target);
+    if (!ucSet.has(a) || !ucSet.has(b)) continue;
+    adjacency.get(a)!.add(b);
+    adjacency.get(b)!.add(a);
+  }
 
-  const edges = model.edges.map((edge) => {
-    const relationType = getEdgeRelationType(edge);
-    const label = relationType === 'association' ? '' : `&lt;&lt;${relationType}&gt;&gt;`;
-    const style =
-      relationType === 'association'
-        ? 'edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=none;strokeColor=#64748b;strokeWidth=2;'
-        : 'edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;endArrow=open;strokeColor=#2563eb;strokeWidth=2;';
+  const ordered: string[] = [];
+  const visited = new Set<string>();
+  for (const seed of ucIds) {
+    if (visited.has(seed)) continue;
+    const queue: string[] = [seed];
+    visited.add(seed);
+    while (queue.length) {
+      const next = queue.shift()!;
+      ordered.push(next);
+      const neighbors = adjacency.get(next);
+      if (!neighbors) continue;
+      // Visita vizinhos respeitando a ordem original para manter previsibilidade.
+      for (const candidate of ucIds) {
+        if (!neighbors.has(candidate) || visited.has(candidate)) continue;
+        visited.add(candidate);
+        queue.push(candidate);
+      }
+    }
+  }
+  return ordered;
+}
 
-    return [
-      `        <mxCell id="${escapeXml(String(edge.id))}" value="${label}" style="${style}" edge="1" parent="1" source="${escapeXml(String(edge.source))}" target="${escapeXml(String(edge.target))}">`,
-      '          <mxGeometry relative="1" as="geometry" />',
-      '        </mxCell>',
-    ].join('\n');
-  });
+export async function relayoutDiagramModelWithGraphviz(model: DiagramModel): Promise<DiagramModel> {
+  if (model.edges.every((edge) => getEdgeRelationType(edge) === 'association')) {
+    return relayoutDiagramModel(model);
+  }
 
-  return [
-    '<mxfile host="app.diagrams.net" type="device">',
-    `  <diagram id="software-engineering-extractor-usecase-diagram" name="${escapeXml(model.systemName || 'Diagrama')}">`,
-    '    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">',
-    '      <root>',
-    '        <mxCell id="0" />',
-    '        <mxCell id="1" parent="0" />',
-    ...nodes,
-    ...edges,
-    '      </root>',
-    '    </mxGraphModel>',
-    '  </diagram>',
-    '</mxfile>',
-    '',
-  ].join('\n');
+  try {
+    const { instance } = await import('@viz-js/viz');
+    const viz = await instance();
+    const json = viz.renderJSON(buildGraphvizLayoutDot(model), { engine: 'dot' }) as GraphvizJson;
+    const graphvizPositions = readGraphvizPositions(json);
+    if (!graphvizPositions.size) return relayoutDiagramModel(model);
+
+    return {
+      ...model,
+      nodes: model.nodes.map((node) => {
+        const next = graphvizPositions.get(String(node.id));
+        if (!next) return node;
+        return { ...node, position: next };
+      }),
+      edges: model.edges.map(normalizeDiagramEdgeVisuals),
+    };
+  } catch {
+    return relayoutDiagramModel(model);
+  }
 }
 
 function escapeQuotes(value: string): string {
@@ -307,352 +329,266 @@ function escapeQuotes(value: string): string {
 }
 
 /**
- * Camadas em grafos UC→UC (include/extend): o alvo fica à direita do origem,
- * reduzindo cruzamentos e alinhando o fluxo típico LTR do PlantUML.
+ * Layout profissional 360° — espaçoso e adaptativo.
+ *
+ * Filosofia: legibilidade > compacidade. O diagrama pode ser tão grande quanto
+ * necessário; quem está na apresentação dá zoom/pan. Mantemos número de colunas
+ * BAIXO (no máximo {@link UC_GRID_MAX_COLS}) e deixamos o diagrama crescer em
+ * altura para que cada caso de uso fique bem espaçado e os relacionamentos
+ * (`<<include>>`/`<<extend>>`) tenham espaço para curvar sem cruzar tudo.
+ *
+ * 1. UCs ocupam uma grade levemente "retrato" (mais alta do que larga),
+ *    capada em {@link UC_GRID_MAX_COLS} colunas — chega a ser enorme, mas
+ *    permanece organizada.
+ * 2. Atores são distribuídos pelo perímetro (esquerda, direita, topo, base)
+ *    conforme a quantidade — 1 vai à esquerda, 2 ocupam laterais opostas,
+ *    3+ se espalham para 360° ao redor da grade central.
+ *
+ * O resultado é um diagrama com bastante "ar", pronto para apresentação
+ * executiva mesmo com dezenas de casos de uso.
  */
-function computeUseCaseLayers(useCaseIds: string[], edges: Edge[]): Map<string, number> {
-  const ucSet = new Set(useCaseIds);
-  const layer = new Map<string, number>();
-  for (const id of useCaseIds) layer.set(id, 0);
+const PERIMETER_GAP = 220;
+const UC_GRID_COL_GAP = 260;
+const UC_GRID_ROW_GAP = 190;
+const UC_GRID_ASPECT_TARGET = 0.65;
+const UC_GRID_MAX_COLS = 4;
+const GRAPHVIZ_POINT_SCALE = 1.26;
 
-  const maxIter = Math.max(8, useCaseIds.length + 4);
-  for (let iter = 0; iter < maxIter; iter += 1) {
-    let changed = false;
-    for (const edge of edges) {
-      if (getEdgeRelationType(edge) === 'association') continue;
-      const source = String(edge.source);
-      const target = String(edge.target);
-      if (!ucSet.has(source) || !ucSet.has(target)) continue;
-      const nextLayer = (layer.get(source) ?? 0) + 1;
-      if (nextLayer > (layer.get(target) ?? 0)) {
-        layer.set(target, nextLayer);
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
+type GraphvizJson = {
+  bb?: string;
+  objects?: Array<{
+    name?: string;
+    pos?: string;
+  }>;
+};
 
-  return layer;
-}
+function buildGraphvizLayoutDot(model: DiagramModel): string {
+  const nodes = model.nodes.filter((node) => !String(node.id).startsWith('__system'));
+  const actorIds = nodes.filter((node) => !isUseCaseId(node.id)).map((node) => String(node.id));
+  const useCaseIds = nodes.filter((node) => isUseCaseId(node.id)).map((node) => String(node.id));
+  const associationTargetsByActor = getAssociationTargetsByActor(model.edges);
+  const relationEdges = model.edges.filter((edge) => getEdgeRelationType(edge) !== 'association');
 
-/**
- * Prioriza **poucas colunas** (idealmente 1) para que associações ator→UC fiquem curtas;
- * só abre mais colunas quando passa de {@link MAX_UC_ROWS_SINGLE_COLUMN} UCs no mesmo bloco.
- */
-function computeUseCaseColumnPlan(count: number): { rows: number; subCols: number } {
-  if (count <= 0) return { rows: 1, subCols: 1 };
-  if (count <= MAX_UC_ROWS_SINGLE_COLUMN) return { rows: count, subCols: 1 };
-  const subCols = Math.ceil(count / MAX_UC_ROWS_SINGLE_COLUMN);
-  const rows = Math.ceil(count / subCols);
-  return { rows, subCols };
-}
+  const lines = [
+    'digraph UseCaseDiagram {',
+    '  graph [rankdir=LR, margin=0, pad=0.3, nodesep=1.05, ranksep=2.25, splines=curved, overlap=false, concentrate=false, outputorder=edgesfirst, newrank=true];',
+    '  node [shape=box, fixedsize=true, margin=0, label="", style=invis];',
+    '  edge [style=invis, arrowsize=0.6];',
+  ];
 
-function inferPrimaryActorForUcs(edges: Edge[], actorIdSet: Set<string>): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const edge of edges) {
-    if (getEdgeRelationType(edge) !== 'association') continue;
-    const s = String(edge.source);
-    const t = String(edge.target);
-    let actor: string | null = null;
-    let uc: string | null = null;
-    if (actorIdSet.has(s) && t.startsWith('UC')) {
-      actor = s;
-      uc = t;
-    } else if (actorIdSet.has(t) && s.startsWith('UC')) {
-      actor = t;
-      uc = s;
-    }
-    if (actor && uc && !map.has(uc)) map.set(uc, actor);
-  }
-  return map;
-}
-
-function actorZoneLayoutFraction(
-  useCaseIds: string[],
-  inferred: Map<string, string>,
-): number {
-  if (!useCaseIds.length) return 0;
-  let hit = 0;
-  for (const id of useCaseIds) {
-    if (inferred.has(id)) hit += 1;
-  }
-  return hit / useCaseIds.length;
-}
-
-function nodeBoundingBox(id: string, position: { x: number; y: number }) {
-  const w = id.startsWith('UC') ? USE_CASE_WIDTH : ACTOR_WIDTH;
-  const h = id.startsWith('UC') ? USE_CASE_HEIGHT : ACTOR_HEIGHT;
-  return {
-    x: position.x,
-    y: position.y,
-    w,
-    h,
-    right: position.x + w,
-    bottom: position.y + h,
-  };
-}
-
-function rectsOverlap(
-  a: ReturnType<typeof nodeBoundingBox>,
-  b: ReturnType<typeof nodeBoundingBox>,
-  pad = 2,
-) {
-  return !(
-    a.right + pad <= b.x ||
-    b.right + pad <= a.x ||
-    a.bottom + pad <= b.y ||
-    b.bottom + pad <= a.y
-  );
-}
-
-/**
- * Afasta nós que ainda se interceptam após o layout em grade (ex.: labels longas no futuro).
- * Só desloca casos de uso; atores ficam fixos na coluna esquerda.
- */
-function hasBoundingOverlap(
-  positions: Map<string, { x: number; y: number }>,
-  ordered: string[],
-): boolean {
-  for (let i = 0; i < ordered.length; i += 1) {
-    const idA = ordered[i]!;
-    const pa = positions.get(idA);
-    if (!pa) continue;
-    const boxA = nodeBoundingBox(idA, pa);
-    for (let j = i + 1; j < ordered.length; j += 1) {
-      const idB = ordered[j]!;
-      const pb = positions.get(idB);
-      if (!pb) continue;
-      const boxB = nodeBoundingBox(idB, pb);
-      if (rectsOverlap(boxA, boxB, OVERLAP_PADDING)) return true;
-    }
-  }
-  return false;
-}
-
-function resolveNodeOverlaps(
-  positions: Map<string, { x: number; y: number }>,
-  actorIds: string[],
-  useCaseIds: string[],
-  minUcXClamp: number | null = ACTOR_LEFT_X + ACTOR_WIDTH + 24,
-) {
-  const actorSet = new Set(actorIds);
-  const ordered = [...actorIds, ...useCaseIds];
-  const maxIter = Math.min(320, Math.max(72, 24 + Math.ceil(useCaseIds.length * 1.2)));
-
-  for (let iter = 0; iter < maxIter; iter += 1) {
-    let changed = false;
-
-    for (let i = 0; i < ordered.length; i += 1) {
-      for (let j = i + 1; j < ordered.length; j += 1) {
-        const idA = ordered[i]!;
-        const idB = ordered[j]!;
-        const pa = positions.get(idA);
-        const pb = positions.get(idB);
-        if (!pa || !pb) continue;
-
-        const boxA = nodeBoundingBox(idA, pa);
-        const boxB = nodeBoundingBox(idB, pb);
-        if (!rectsOverlap(boxA, boxB, OVERLAP_PADDING)) continue;
-
-        const moveActorA = actorSet.has(idA) && !actorSet.has(idB);
-        const moveActorB = actorSet.has(idB) && !actorSet.has(idA);
-        let moveId =
-          moveActorA ? idB : moveActorB ? idA : idA.startsWith('UC') && idB.startsWith('UC')
-            ? idA > idB
-              ? idA
-              : idB
-            : idA.startsWith('UC')
-              ? idA
-              : idB;
-        if (actorSet.has(moveId)) {
-          moveId = idA > idB ? idA : idB;
-        }
-
-        const m = positions.get(moveId)!;
-        const bm = nodeBoundingBox(moveId, m);
-        const other = moveId === idA ? boxB : boxA;
-
-        const pushDown = Math.max(0, other.bottom - bm.y) + OVERLAP_PADDING;
-        const pushRight = Math.max(0, other.right - bm.x) + OVERLAP_PADDING;
-
-        const minUcX = minUcXClamp ?? Number.NEGATIVE_INFINITY;
-        if (pushRight <= pushDown + 4 && bm.x + pushRight >= minUcX) {
-          m.x += pushRight;
-        } else {
-          m.y += pushDown;
-        }
-
-        if (minUcXClamp !== null && m.x < minUcX) m.x = minUcX;
-        changed = true;
-      }
-    }
-
-    if (!changed) break;
-  }
-}
-
-function computeLayeredDiagramPositions(
-  actorIds: string[],
-  useCaseIds: string[],
-  layers: Map<string, number>,
-): Map<string, { x: number; y: number }> {
-  const positions = new Map<string, { x: number; y: number }>();
-  const byLayer = new Map<number, string[]>();
-  for (const id of useCaseIds) {
-    const L = layers.get(id) ?? 0;
-    if (!byLayer.has(L)) byLayer.set(L, []);
-    byLayer.get(L)!.push(id);
-  }
-  for (const list of byLayer.values()) list.sort();
-
-  const layerKeys = [...byLayer.keys()].sort((a, b) => a - b);
-  const UC_START_X = Math.max(ACTOR_LEFT_X + ACTOR_WIDTH + 32, 280);
-
-  const layerLayout = new Map<number, { ids: string[]; subCols: number; rows: number }>();
-  let maxRowsInAnyLayer = 1;
-
-  for (const L of layerKeys) {
-    const ids = byLayer.get(L) || [];
-    if (!ids.length) continue;
-    const { rows, subCols } = computeUseCaseColumnPlan(ids.length);
-    maxRowsInAnyLayer = Math.max(maxRowsInAnyLayer, rows);
-    layerLayout.set(L, { ids, subCols, rows });
-  }
-
-  const rowGapUsed = Math.max(
-    USE_CASE_HEIGHT + 16,
-    Math.min(
-      VERTICAL_GAP,
-      Math.floor(9000 / Math.max(4, maxRowsInAnyLayer + 3)),
-    ),
-  );
-
-  let layerCursorX = UC_START_X;
-  for (const L of layerKeys) {
-    const pack = layerLayout.get(L);
-    if (!pack) continue;
-    const { ids, subCols, rows } = pack;
-
-    ids.forEach((id, idx) => {
-      const subCol = Math.floor(idx / rows);
-      const row = idx % rows;
-      positions.set(id, {
-        x: layerCursorX + subCol * UC_HORIZONTAL_STRIDE,
-        y: UC_TOP_MARGIN + row * rowGapUsed,
-      });
-    });
-
-    layerCursorX += subCols * UC_HORIZONTAL_STRIDE + LAYER_GROUP_GAP;
-  }
-
-  const diagramContentHeight =
-    (maxRowsInAnyLayer - 1) * rowGapUsed + USE_CASE_HEIGHT;
-  const actorTop = UC_TOP_MARGIN;
-  const actorBottom = UC_TOP_MARGIN + Math.max(diagramContentHeight - ACTOR_HEIGHT, 0);
-  const actorSpan = Math.max(actorBottom - actorTop, 0);
-  const actorStep = actorIds.length > 1 ? actorSpan / (actorIds.length - 1) : 0;
-
-  actorIds.forEach((id, idx) => {
-    const y =
-      actorIds.length === 1
-        ? UC_TOP_MARGIN + Math.max(0, (diagramContentHeight - ACTOR_HEIGHT) / 2)
-        : actorTop + idx * actorStep;
-    positions.set(id, { x: ACTOR_LEFT_X, y });
+  actorIds.forEach((id) => {
+    lines.push(
+      `  ${dotId(id)} [width=${toGraphvizInches(ACTOR_WIDTH)}, height=${toGraphvizInches(ACTOR_HEIGHT)}];`,
+    );
   });
 
-  return positions;
+  useCaseIds.forEach((id) => {
+    lines.push(
+      `  ${dotId(id)} [width=${toGraphvizInches(USE_CASE_WIDTH)}, height=${toGraphvizInches(USE_CASE_HEIGHT)}];`,
+    );
+  });
+
+  // As relações UC→UC são o esqueleto do layout. Elas recebem peso e rank para
+  // que dependências fiquem em colunas próximas e cruzem menos.
+  relationEdges.forEach((edge) => {
+    const source = String(edge.source);
+    const target = String(edge.target);
+    if (!isUseCaseId(source) || !isUseCaseId(target)) return;
+    const minlen = useCaseIds.length > 24 ? 1 : 2;
+    lines.push(
+      `  ${dotId(source)} -> ${dotId(target)} [constraint=true, weight=6, minlen=${minlen}];`,
+    );
+  });
+
+  // Associações com atores não comandam o miolo do grafo; um único vínculo
+  // invisível por ator o mantém do lado esquerdo sem criar o "pente" que havia
+  // esmagado todos os casos de uso.
+  actorIds.forEach((actorId) => {
+    const targets = associationTargetsByActor.get(actorId) || [];
+    if (!targets.length) return;
+    const anchor = pickActorAnchorUseCase(targets, relationEdges, useCaseIds);
+    lines.push(`  ${dotId(actorId)} -> ${dotId(anchor)} [constraint=true, weight=12, minlen=1];`);
+  });
+
+  if (relationEdges.length === 0) {
+    const ordered = clusterUseCasesByRelations(useCaseIds, model.edges);
+    for (let index = 1; index < ordered.length; index += 1) {
+      lines.push(
+        `  ${dotId(ordered[index - 1]!)} -> ${dotId(ordered[index]!)} [constraint=false, weight=0];`,
+      );
+    }
+  }
+
+  lines.push('}');
+  return lines.join('\n');
 }
 
-/**
- * Vários atores: cada um com a sua “faixa” (ator + UCs associados), quebra de linha se passar da largura-alvo.
- * Reduz o leque gigante de associações vindas de um único ponto à esquerda.
- */
-function computeActorZonePositions(
-  actorIds: string[],
-  useCaseIds: string[],
-  layers: Map<string, number>,
-  inferred: Map<string, string>,
-): Map<string, { x: number; y: number }> {
-  const ORPHAN = '__orphan__';
-  const ucByActor = new Map<string, string[]>();
-  for (const aid of actorIds) ucByActor.set(aid, []);
-
-  for (const uc of useCaseIds) {
-    const a = inferred.get(uc) || ORPHAN;
-    if (!ucByActor.has(a)) ucByActor.set(a, []);
-    ucByActor.get(a)!.push(uc);
+function readGraphvizPositions(json: GraphvizJson): Map<string, { x: number; y: number }> {
+  const graphHeight = Number(String(json.bb || '').split(',')[3] || 0);
+  if (!Number.isFinite(graphHeight) || graphHeight <= 0 || !Array.isArray(json.objects)) {
+    return new Map();
   }
-
-  const orphan = ucByActor.get(ORPHAN);
-  if (orphan?.length) {
-    ucByActor.delete(ORPHAN);
-    const sink = actorIds.reduce((best, id) => {
-      const len = ucByActor.get(id)?.length ?? 0;
-      const bestLen = ucByActor.get(best)?.length ?? 0;
-      return len > bestLen ? id : best;
-    }, actorIds[0]!);
-    ucByActor.get(sink)!.push(...orphan);
-  }
-
-  const sortUc = (a: string, b: string) => {
-    const d = (layers.get(a) ?? 0) - (layers.get(b) ?? 0);
-    return d !== 0 ? d : a.localeCompare(b);
-  };
-  for (const list of ucByActor.values()) list.sort(sortUc);
-
-  const actorsWithZones = actorIds
-    .filter((id) => (ucByActor.get(id)?.length ?? 0) > 0)
-    .sort((a, b) => {
-      const d = ucByActor.get(b)!.length - ucByActor.get(a)!.length;
-      return d !== 0 ? d : a.localeCompare(b);
-    });
 
   const positions = new Map<string, { x: number; y: number }>();
-  let cursorX = ACTOR_LEFT_X;
-  let rowYOffset = 0;
-  let rowMaxHeight = 0;
-
-  for (const actorId of actorsWithZones) {
-    const ids = ucByActor.get(actorId)!;
-    const { rows, subCols } = computeUseCaseColumnPlan(ids.length);
-    const rowGap = Math.max(
-      USE_CASE_HEIGHT + 16,
-      Math.min(VERTICAL_GAP, Math.floor(9600 / Math.max(4, rows + 3))),
-    );
-    const gridH = (rows - 1) * rowGap + USE_CASE_HEIGHT;
-    const zoneW = ACTOR_WIDTH + ZONE_ACTOR_TO_UC_GAP + subCols * UC_HORIZONTAL_STRIDE;
-
-    if (cursorX + zoneW > ZONE_ROW_WRAP_WIDTH && cursorX > ACTOR_LEFT_X) {
-      rowYOffset += rowMaxHeight + ZONE_ROW_VERTICAL_GAP;
-      rowMaxHeight = 0;
-      cursorX = ACTOR_LEFT_X;
-    }
-
-    const baseY = UC_TOP_MARGIN + rowYOffset;
-    const actorY = baseY + Math.max(0, (gridH - ACTOR_HEIGHT) / 2);
-    positions.set(actorId, { x: cursorX, y: actorY });
-
-    const ucBaseX = cursorX + ACTOR_WIDTH + ZONE_ACTOR_TO_UC_GAP;
-
-    ids.forEach((id, idx) => {
-      const subCol = Math.floor(idx / rows);
-      const row = idx % rows;
-      positions.set(id, {
-        x: ucBaseX + subCol * UC_HORIZONTAL_STRIDE,
-        y: baseY + row * rowGap,
-      });
+  json.objects.forEach((object) => {
+    if (!object.name || !object.pos) return;
+    const [rawX, rawY] = object.pos.split(',').map(Number);
+    if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) return;
+    const width = isUseCaseId(object.name) ? USE_CASE_WIDTH : ACTOR_WIDTH;
+    const height = isUseCaseId(object.name) ? USE_CASE_HEIGHT : ACTOR_HEIGHT;
+    positions.set(object.name, {
+      x: rawX * GRAPHVIZ_POINT_SCALE - width / 2,
+      y: (graphHeight - rawY) * GRAPHVIZ_POINT_SCALE - height / 2,
     });
+  });
+  return normalizePositionsToPositiveSpace(positions);
+}
 
-    rowMaxHeight = Math.max(rowMaxHeight, gridH);
-    cursorX += zoneW + ZONE_BETWEEN_ACTORS_GAP;
+function normalizePositionsToPositiveSpace(
+  positions: Map<string, { x: number; y: number }>,
+): Map<string, { x: number; y: number }> {
+  if (!positions.size) return positions;
+  const minX = Math.min(...[...positions.values()].map((pos) => pos.x));
+  const minY = Math.min(...[...positions.values()].map((pos) => pos.y));
+  const offsetX = UC_TOP_MARGIN - minX;
+  const offsetY = UC_TOP_MARGIN - minY;
+  return new Map(
+    [...positions.entries()].map(([id, pos]) => [
+      id,
+      {
+        x: Math.round(pos.x + offsetX),
+        y: Math.round(pos.y + offsetY),
+      },
+    ]),
+  );
+}
+
+function getAssociationTargetsByActor(edges: Edge[]): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  edges.forEach((edge) => {
+    if (getEdgeRelationType(edge) !== 'association') return;
+    const source = String(edge.source);
+    const target = String(edge.target);
+    const actorId = isUseCaseId(source) ? target : source;
+    const useCaseId = isUseCaseId(source) ? source : target;
+    if (!isUseCaseId(useCaseId) || isUseCaseId(actorId)) return;
+    if (!result.has(actorId)) result.set(actorId, []);
+    result.get(actorId)!.push(useCaseId);
+  });
+  return result;
+}
+
+function pickActorAnchorUseCase(
+  targets: string[],
+  relationEdges: Edge[],
+  orderedUseCaseIds: string[],
+): string {
+  const relationTargets = new Set(relationEdges.map((edge) => String(edge.target)));
+  const entry = targets.find((target) => !relationTargets.has(target));
+  if (entry) return entry;
+  return [...targets].sort(
+    (a, b) => orderedUseCaseIds.indexOf(a) - orderedUseCaseIds.indexOf(b),
+  )[0]!;
+}
+
+function toGraphvizInches(points: number): string {
+  return (points / 72).toFixed(3);
+}
+
+function dotId(value: string): string {
+  return `"${String(value).replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
+function pickGridDimensions(count: number): { cols: number; rows: number } {
+  if (count <= 0) return { cols: 0, rows: 0 };
+  if (count === 1) return { cols: 1, rows: 1 };
+  const tileWidth = USE_CASE_WIDTH + UC_GRID_COL_GAP;
+  const tileHeight = USE_CASE_HEIGHT + UC_GRID_ROW_GAP;
+  const ratio = (UC_GRID_ASPECT_TARGET * tileHeight) / tileWidth;
+  const idealCols = Math.max(1, Math.round(Math.sqrt(count * ratio)));
+  const cols = Math.min(UC_GRID_MAX_COLS, Math.max(1, idealCols));
+  const rows = Math.ceil(count / cols);
+  return { cols, rows };
+}
+
+function placeActorsOnPerimeter(
+  actorIds: string[],
+  gridOriginX: number,
+  gridOriginY: number,
+  gridWidth: number,
+  gridHeight: number,
+): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  const total = actorIds.length;
+  if (!total) return positions;
+
+  let leftCount = 0;
+  let rightCount = 0;
+  let topCount = 0;
+  let bottomCount = 0;
+
+  if (total === 1) {
+    leftCount = 1;
+  } else if (total === 2) {
+    leftCount = 1;
+    rightCount = 1;
+  } else if (total === 3) {
+    leftCount = 1;
+    rightCount = 1;
+    topCount = 1;
+  } else if (total === 4) {
+    leftCount = 1;
+    rightCount = 1;
+    topCount = 1;
+    bottomCount = 1;
+  } else {
+    // Laterais (esquerda/direita) recebem o maior contingente porque a grade
+    // tende a ser mais alta do que larga em termos de “slots” de ator.
+    leftCount = Math.ceil(total / 4);
+    rightCount = Math.ceil((total - leftCount) / 3);
+    topCount = Math.ceil((total - leftCount - rightCount) / 2);
+    bottomCount = total - leftCount - rightCount - topCount;
   }
 
-  let stackY = UC_TOP_MARGIN + rowYOffset + rowMaxHeight + 48;
-  for (const aid of actorIds) {
-    if (positions.has(aid)) continue;
-    positions.set(aid, { x: ACTOR_LEFT_X, y: stackY });
-    stackY += ACTOR_HEIGHT + 20;
-  }
+  const spreadAlong = (count: number, span: number, itemSize: number) => {
+    if (count === 0) return [] as number[];
+    if (count === 1) return [Math.max(0, (span - itemSize) / 2)];
+    const usable = Math.max(0, span - itemSize);
+    const step = usable / (count - 1);
+    return Array.from({ length: count }, (_, i) => i * step);
+  };
+
+  let cursor = 0;
+  spreadAlong(leftCount, gridHeight, ACTOR_HEIGHT).forEach((dy, i) => {
+    positions.set(actorIds[cursor + i]!, {
+      x: gridOriginX - PERIMETER_GAP - ACTOR_WIDTH,
+      y: gridOriginY + dy,
+    });
+  });
+  cursor += leftCount;
+
+  spreadAlong(rightCount, gridHeight, ACTOR_HEIGHT).forEach((dy, i) => {
+    positions.set(actorIds[cursor + i]!, {
+      x: gridOriginX + gridWidth + PERIMETER_GAP,
+      y: gridOriginY + dy,
+    });
+  });
+  cursor += rightCount;
+
+  spreadAlong(topCount, gridWidth, ACTOR_WIDTH).forEach((dx, i) => {
+    positions.set(actorIds[cursor + i]!, {
+      x: gridOriginX + dx,
+      y: gridOriginY - PERIMETER_GAP - ACTOR_HEIGHT,
+    });
+  });
+  cursor += topCount;
+
+  spreadAlong(bottomCount, gridWidth, ACTOR_WIDTH).forEach((dx, i) => {
+    positions.set(actorIds[cursor + i]!, {
+      x: gridOriginX + dx,
+      y: gridOriginY + gridHeight + PERIMETER_GAP,
+    });
+  });
 
   return positions;
 }
@@ -660,42 +596,62 @@ function computeActorZonePositions(
 function computeDiagramPositions(
   actorMap: Map<string, string>,
   useCaseMap: Map<string, string>,
-  edges: Edge[],
+  orderedUseCaseIds?: string[],
+  orderedActorIds?: string[],
 ): Map<string, { x: number; y: number }> {
-  const actorIds = [...actorMap.keys()].sort();
-  const useCaseIds = [...useCaseMap.keys()].sort();
+  const actorIds =
+    orderedActorIds && orderedActorIds.length === actorMap.size
+      ? orderedActorIds.slice()
+      : [...actorMap.keys()];
+  const useCaseIds =
+    orderedUseCaseIds && orderedUseCaseIds.length === useCaseMap.size
+      ? orderedUseCaseIds.slice()
+      : [...useCaseMap.keys()].sort();
+
+  // Origem reserva espaço para atores em todas as direções (em torno do bloco central).
+  const gridOriginX = ACTOR_WIDTH + PERIMETER_GAP + UC_TOP_MARGIN;
+  const gridOriginY = ACTOR_HEIGHT + PERIMETER_GAP + UC_TOP_MARGIN;
 
   if (!useCaseIds.length) {
     const positions = new Map<string, { x: number; y: number }>();
-    const actorStep = actorIds.length > 1 ? 96 : 0;
+    const actorStep = actorIds.length > 1 ? ACTOR_HEIGHT + 24 : 0;
     actorIds.forEach((id, idx) => {
-      positions.set(id, { x: ACTOR_LEFT_X, y: UC_TOP_MARGIN + idx * actorStep });
+      positions.set(id, { x: gridOriginX, y: gridOriginY + idx * actorStep });
     });
     return positions;
   }
 
-  const layers = computeUseCaseLayers(useCaseIds, edges);
-  const inferred = inferPrimaryActorForUcs(edges, new Set(actorIds));
-  const zoneFraction = actorZoneLayoutFraction(useCaseIds, inferred);
+  const { cols, rows } = pickGridDimensions(useCaseIds.length);
+  const positions = new Map<string, { x: number; y: number }>();
+  useCaseIds.forEach((id, idx) => {
+    const row = Math.floor(idx / cols);
+    const col = idx % cols;
+    positions.set(id, {
+      x: gridOriginX + col * (USE_CASE_WIDTH + UC_GRID_COL_GAP),
+      y: gridOriginY + row * (USE_CASE_HEIGHT + UC_GRID_ROW_GAP),
+    });
+  });
 
-  const actorsWithInferredUcs = new Set(inferred.values());
-  const activeActors = actorIds.filter((id) => actorsWithInferredUcs.has(id));
-  const useZones =
-    actorIds.length >= 2 && zoneFraction >= 0.45 && activeActors.length >= 2;
+  const gridWidth = cols * USE_CASE_WIDTH + Math.max(0, cols - 1) * UC_GRID_COL_GAP;
+  const gridHeight = rows * USE_CASE_HEIGHT + Math.max(0, rows - 1) * UC_GRID_ROW_GAP;
 
-  if (useZones) {
-    const positions = computeActorZonePositions(actorIds, useCaseIds, layers, inferred);
-    const ordered = [...actorIds, ...useCaseIds];
-    if (hasBoundingOverlap(positions, ordered)) {
-      resolveNodeOverlaps(positions, actorIds, useCaseIds, null);
-    }
-    return positions;
+  const actorPositions = placeActorsOnPerimeter(
+    actorIds,
+    gridOriginX,
+    gridOriginY,
+    gridWidth,
+    gridHeight,
+  );
+  actorPositions.forEach((pos, id) => positions.set(id, pos));
+
+  // Atores sem posição (caso o cálculo não distribua) caem na coluna esquerda.
+  let stackY = gridOriginY + gridHeight + PERIMETER_GAP;
+  for (const id of actorIds) {
+    if (positions.has(id)) continue;
+    positions.set(id, { x: gridOriginX, y: stackY });
+    stackY += ACTOR_HEIGHT + 20;
   }
 
-  const positions = computeLayeredDiagramPositions(actorIds, useCaseIds, layers);
-  if (hasBoundingOverlap(positions, [...actorIds, ...useCaseIds])) {
-    resolveNodeOverlaps(positions, actorIds, useCaseIds);
-  }
   return positions;
 }
 
@@ -706,15 +662,15 @@ function createDiagramFromMaps(
   edges: Edge[],
 ): DiagramModel {
   const nodes: Node[] = [];
-  const actorIds = [...actorMap.keys()].sort();
+  const actorIds = [...actorMap.keys()];
   const useCaseIds = [...useCaseMap.keys()].sort();
-  const positions = computeDiagramPositions(actorMap, useCaseMap, edges);
+  const positions = computeDiagramPositions(actorMap, useCaseMap, useCaseIds, actorIds);
 
   actorIds.forEach((id) => {
-    const pos = positions.get(id) || { x: ACTOR_LEFT_X, y: UC_TOP_MARGIN };
+    const pos = positions.get(id) || { x: 24, y: UC_TOP_MARGIN };
     nodes.push({
       id,
-      type: 'input',
+      type: 'actor',
       position: pos,
       data: { label: actorMap.get(id) || id },
       className: 'diagram-node diagram-node--actor',
@@ -726,7 +682,7 @@ function createDiagramFromMaps(
     const pos = positions.get(id) || { x: 300, y: UC_TOP_MARGIN };
     nodes.push({
       id,
-      type: 'default',
+      type: 'useCase',
       position: pos,
       data: { label: useCaseMap.get(id) || id },
       className: 'diagram-node diagram-node--usecase',
@@ -737,7 +693,7 @@ function createDiagramFromMaps(
   return {
     systemName: cleanLabel(systemName || 'Sistema'),
     nodes,
-    edges: dedupeEdges(edges),
+    edges: dedupeEdges(edges).map(normalizeDiagramEdgeVisuals),
   };
 }
 
@@ -746,7 +702,7 @@ function createAssociationEdge(source: string, target: string): Edge {
     id: `assoc:${source}--${target}`,
     source,
     target,
-    type: 'straight',
+    type: 'smoothCurve',
     label: '',
     data: { relationType: 'association' },
     style: associationEdgeStyle,
@@ -758,22 +714,56 @@ function createRelationEdge(
   target: string,
   relationType: 'include' | 'extend',
 ): Edge {
+  const color = relationType === 'include' ? INCLUDE_EDGE_COLOR : EXTEND_EDGE_COLOR;
   return {
     id: `rel:${source}..>${target}:${relationType}`,
     source,
     target,
-    type: 'default',
-    pathOptions: { curvature: 0.22 },
+    type: 'smoothCurve',
     label: `<<${relationType}>>`,
     data: { relationType },
-    labelBgPadding: [8, 4],
-    labelBgBorderRadius: 4,
-    labelBgStyle: { fill: '#ffffff', fillOpacity: 0.95 },
-    labelStyle: {
-      fill: relationType === 'include' ? '#1d4ed8' : '#6d28d9',
-      fontWeight: 700,
-    },
-    markerEnd: { type: MarkerType.ArrowClosed },
+    markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
+    style: relationEdgeStyle(relationType),
+  };
+}
+
+function normalizeDiagramEdgeVisuals(edge: Edge): Edge {
+  const relationType = getEdgeRelationType(edge);
+  if (relationType === 'association') {
+    const source = String(edge.source);
+    const target = String(edge.target);
+    const sourceIsUseCase = isUseCaseId(source);
+    const targetIsUseCase = isUseCaseId(target);
+    const normalizedSource = sourceIsUseCase && !targetIsUseCase ? target : source;
+    const normalizedTarget = sourceIsUseCase && !targetIsUseCase ? source : target;
+
+    return {
+      ...edge,
+      source: normalizedSource,
+      target: normalizedTarget,
+      type: 'smoothCurve',
+      label: '',
+      data: { ...(edge.data || {}), relationType },
+      labelBgStyle: undefined,
+      labelStyle: undefined,
+      labelBgPadding: undefined,
+      labelBgBorderRadius: undefined,
+      markerEnd: undefined,
+      style: associationEdgeStyle,
+    };
+  }
+
+  const color = relationType === 'include' ? INCLUDE_EDGE_COLOR : EXTEND_EDGE_COLOR;
+  return {
+    ...edge,
+    type: 'smoothCurve',
+    label: `<<${relationType}>>`,
+    data: { ...(edge.data || {}), relationType },
+    labelBgStyle: undefined,
+    labelStyle: undefined,
+    labelBgPadding: undefined,
+    labelBgBorderRadius: undefined,
+    markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
     style: relationEdgeStyle(relationType),
   };
 }
@@ -797,6 +787,10 @@ function getEdgeRelationType(edge: Edge): 'association' | 'include' | 'extend' {
   if (label.includes('extend')) return 'extend';
   if (label.includes('include')) return 'include';
   return 'association';
+}
+
+function isUseCaseId(id: unknown): boolean {
+  return String(id).startsWith('UC');
 }
 
 function normalizeUseCaseId(id: string, index: number) {
@@ -843,29 +837,4 @@ function slugId(value: string, fallback: string) {
 
 function cleanLabel(value: string) {
   return String(value || '').trim() || 'Sem titulo';
-}
-
-function getNodeLabel(node: Node) {
-  return String((node.data as { label?: unknown } | undefined)?.label || node.id);
-}
-
-function getNodeGeometry(node: Node) {
-  const isUseCase = String(node.id).startsWith('UC');
-  const width = isUseCase ? USE_CASE_WIDTH : ACTOR_WIDTH;
-  const height = isUseCase ? USE_CASE_HEIGHT : ACTOR_HEIGHT;
-  return {
-    x: Math.round(node.position.x),
-    y: Math.round(node.position.y),
-    width,
-    height,
-  };
-}
-
-function escapeXml(value: string) {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&apos;');
 }

@@ -1,5 +1,10 @@
 import type { DiagramModel } from '../../../../plantumlBridge';
 import type { FunctionalRequirement, UseCase, UserStory } from '../../model/types';
+import {
+  DIAGRAM_PDF_PAGE_MARGIN,
+  getUseCaseDiagramPdfPageSize,
+  renderUseCaseDiagramImage,
+} from './useCaseDiagramRenderer';
 
 type ExportAnalysisPdfInput = {
   title: string;
@@ -10,16 +15,6 @@ type ExportAnalysisPdfInput = {
   diagram: DiagramModel | null;
   userStories: UserStory[];
   filename: string;
-};
-
-type PdfBox = {
-  id: string;
-  label: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  isUseCase: boolean;
 };
 
 const PAGE_MARGIN = 42;
@@ -59,7 +54,10 @@ export async function exportAnalysisPdf(input: ExportAnalysisPdfInput) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(17);
     doc.setTextColor(TEXT_COLOR);
-    const titleLines = doc.splitTextToSize(text(input.title || 'Analise de requisitos'), contentWidth);
+    const titleLines = doc.splitTextToSize(
+      text(input.title || 'Analise de requisitos'),
+      contentWidth,
+    );
     doc.text(titleLines, PAGE_MARGIN, y);
     y += titleLines.length * 18 + 8;
 
@@ -186,7 +184,7 @@ export async function exportAnalysisPdf(input: ExportAnalysisPdfInput) {
     [48, 108, 86, contentWidth - 358, 116],
   );
 
-  addDiagram(input.diagram);
+  await addDiagram(input.diagram);
 
   addSection('User stories');
   drawTable(
@@ -202,129 +200,57 @@ export async function exportAnalysisPdf(input: ExportAnalysisPdfInput) {
 
   doc.save(input.filename);
 
-  function addDiagram(diagram: DiagramModel | null) {
-    addSection('Diagrama de casos de uso');
-
+  async function addDiagram(diagram: DiagramModel | null) {
     if (!diagram || !diagram.nodes.length) {
+      doc.addPage('a4', 'landscape');
+      y = PAGE_MARGIN;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(TEXT_COLOR);
+      doc.text('Diagrama de casos de uso', PAGE_MARGIN, y);
+      y += 22;
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.setTextColor(MUTED_COLOR);
       doc.text('Diagrama indisponivel.', PAGE_MARGIN, y);
-      y += 20;
+      doc.addPage('a4', 'portrait');
+      y = PAGE_MARGIN;
       return;
     }
 
-    const boxes = buildBoxes(diagram);
-    const minX = Math.min(...boxes.map((box) => box.x));
-    const minY = Math.min(...boxes.map((box) => box.y));
-    const maxX = Math.max(...boxes.map((box) => box.x + box.width));
-    const maxY = Math.max(...boxes.map((box) => box.y + box.height));
-    const rawWidth = Math.max(1, maxX - minX);
-    const rawHeight = Math.max(1, maxY - minY);
-    const maxDiagramHeight = 255;
-    const scale = Math.min((contentWidth - 24) / rawWidth, maxDiagramHeight / rawHeight, 1);
-    const diagramHeight = rawHeight * scale + 28;
+    const rendered = await renderUseCaseDiagramImage(diagram);
+    const diagramPage = getUseCaseDiagramPdfPageSize(rendered.width, rendered.height);
+    doc.addPage(
+      [diagramPage.width, diagramPage.height],
+      diagramPage.width >= diagramPage.height ? 'landscape' : 'portrait',
+    );
 
-    ensureSpace(diagramHeight + 10);
-
-    const originX = PAGE_MARGIN + 12 - minX * scale;
-    const originY = y + 14 - minY * scale;
-    const scaled = (value: number) => value * scale;
-    const center = (box: PdfBox) => ({
-      x: originX + scaled(box.x + box.width / 2),
-      y: originY + scaled(box.y + box.height / 2),
-    });
+    const diagramPageWidth = doc.internal.pageSize.getWidth();
+    const diagramPageHeight = doc.internal.pageSize.getHeight();
+    const diagramContentWidth = diagramPageWidth - DIAGRAM_PDF_PAGE_MARGIN * 2;
+    const diagramContentHeight = diagramPageHeight - DIAGRAM_PDF_PAGE_MARGIN * 2;
+    const imageScale = Math.min(
+      diagramContentWidth / rendered.width,
+      diagramContentHeight / rendered.height,
+    );
+    const imageWidth = rendered.width * imageScale;
+    const imageHeight = rendered.height * imageScale;
+    const imageX = DIAGRAM_PDF_PAGE_MARGIN + (diagramContentWidth - imageWidth) / 2;
+    const imageY = DIAGRAM_PDF_PAGE_MARGIN + (diagramContentHeight - imageHeight) / 2;
 
     doc.setDrawColor(BORDER_COLOR);
-    doc.setFillColor('#ffffff');
-    doc.rect(PAGE_MARGIN, y, contentWidth, diagramHeight, 'S');
+    doc.setLineWidth(0.8);
+    doc.rect(
+      DIAGRAM_PDF_PAGE_MARGIN,
+      DIAGRAM_PDF_PAGE_MARGIN,
+      diagramContentWidth,
+      diagramContentHeight,
+    );
+    doc.addImage(rendered.dataUrl, 'PNG', imageX, imageY, imageWidth, imageHeight);
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(MUTED_COLOR);
-    doc.text(text(diagram.systemName || 'Sistema'), PAGE_MARGIN + 10, y + 14);
-
-    diagram.edges.forEach((edge) => {
-      const source = boxes.find((box) => box.id === String(edge.source));
-      const target = boxes.find((box) => box.id === String(edge.target));
-      if (!source || !target) return;
-      const start = center(source);
-      const end = center(target);
-      const relationType = getRelationType(edge);
-
-      doc.setDrawColor(relationType === 'association' ? '#64748b' : '#2563eb');
-      doc.setLineWidth(relationType === 'association' ? 0.8 : 1);
-      if (relationType !== 'association') {
-        doc.setLineDashPattern([4, 3], 0);
-      }
-      doc.line(start.x, start.y, end.x, end.y);
-      doc.setLineDashPattern([], 0);
-
-      if (relationType !== 'association') {
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7);
-        doc.setTextColor('#1d4ed8');
-        doc.text(
-          `<<${relationType}>>`,
-          (start.x + end.x) / 2,
-          (start.y + end.y) / 2 - 4,
-          { align: 'center' },
-        );
-      }
-    });
-
-    boxes.forEach((box) => {
-      const x = originX + scaled(box.x);
-      const boxY = originY + scaled(box.y);
-      const width = scaled(box.width);
-      const height = scaled(box.height);
-      const centerX = x + width / 2;
-      const centerY = boxY + height / 2;
-
-      doc.setDrawColor(box.isUseCase ? '#2563eb' : '#94a3b8');
-      doc.setFillColor(box.isUseCase ? '#ffffff' : '#f8fafc');
-      if (box.isUseCase) {
-        doc.ellipse(centerX, centerY, width / 2, height / 2, 'FD');
-      } else {
-        doc.rect(x, boxY, width, height, 'FD');
-      }
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(Math.max(6.5, Math.min(8, 8 * scale + 1)));
-      doc.setTextColor(TEXT_COLOR);
-      const labelLines = doc.splitTextToSize(text(box.label), Math.max(34, width - 10)).slice(0, 3);
-      const firstLineY = centerY - ((labelLines.length - 1) * 9) / 2;
-      doc.text(labelLines, centerX, firstLineY, { align: 'center', baseline: 'middle' });
-    });
-
-    y += diagramHeight + 14;
+    doc.addPage('a4', 'portrait');
+    y = PAGE_MARGIN;
   }
-}
-
-function buildBoxes(diagram: DiagramModel): PdfBox[] {
-  return diagram.nodes.map((node) => {
-    const isUseCase = String(node.id).startsWith('UC');
-    return {
-      id: String(node.id),
-      label: String((node.data as { label?: unknown } | undefined)?.label || node.id),
-      x: node.position.x,
-      y: node.position.y,
-      width: isUseCase ? 248 : 172,
-      height: isUseCase ? 66 : 54,
-      isUseCase,
-    };
-  });
-}
-
-function getRelationType(edge: DiagramModel['edges'][number]) {
-  const dataType = String(
-    (edge.data as { relationType?: unknown } | undefined)?.relationType || '',
-  );
-  if (dataType === 'include' || dataType === 'extend') return dataType;
-  const label = String(edge.label || '').toLowerCase();
-  if (label.includes('extend')) return 'extend';
-  if (label.includes('include')) return 'include';
-  return 'association';
 }
 
 function formatUseCaseRelations(useCase: UseCase) {

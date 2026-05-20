@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from 'react';
 import Container from 'react-bootstrap/Container';
 import Button from 'react-bootstrap/Button';
 import Navbar from 'react-bootstrap/Navbar';
@@ -13,6 +21,8 @@ import Offcanvas from 'react-bootstrap/Offcanvas';
 import Nav from 'react-bootstrap/Nav';
 import Card from 'react-bootstrap/Card';
 import ButtonGroup from 'react-bootstrap/ButtonGroup';
+import Badge from 'react-bootstrap/Badge';
+import Collapse from 'react-bootstrap/Collapse';
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 
 import { auth, googleProvider } from './firebase';
@@ -48,23 +58,28 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  BaseEdge,
   Background,
   Controls,
+  EdgeLabelRenderer,
   MarkerType,
   MiniMap,
-  Panel,
+  Handle,
+  Position,
   useReactFlow,
   type Connection,
   type Edge,
   type EdgeChange,
+  type EdgeProps,
   type NodeChange,
+  type NodeProps,
 } from 'reactflow';
 import {
-  diagramModelToDrawioXml,
   diagramModelToPlantuml,
   buildDiagramModelFromUseCases,
   plantumlToDiagramModel,
   relayoutDiagramModel,
+  relayoutDiagramModelWithGraphviz,
   type DiagramModel,
 } from './plantumlBridge';
 import {
@@ -77,13 +92,31 @@ import { UseCasesStep } from './features/analysis/useCases/ui/UseCasesStep';
 import { UserStoriesStep } from './features/analysis/userStories/ui/UserStoriesStep';
 import { AnalysisReport } from './features/analysis/report/ui/AnalysisReport';
 import { exportAnalysisPdf } from './features/analysis/report/model/exportAnalysisPdf';
+import {
+  getUseCaseDiagramPdfPageSize,
+  renderUseCaseDiagramSvg,
+  type DiagramPdfPageSize,
+} from './features/analysis/report/model/useCaseDiagramRenderer';
 import type { AiProjectScope } from './features/analysis/prompts';
 import 'reactflow/dist/style.css';
 
 type NewEdgeKind = 'association' | 'include' | 'extend';
+type DiagramViewMode = 'preview' | 'edit';
 
 /** Malha do canvas alinhada ao `snapToGrid` do React Flow (px). */
 const DIAGRAM_SNAP_GRID: [number, number] = [16, 16];
+const INCLUDE_EDGE_COLOR = '#dc2626';
+const EXTEND_EDGE_COLOR = '#0f766e';
+
+/** Dimensões dos nós usadas para alinhar o canvas editável com a versão do PDF. */
+const EDITOR_USE_CASE_WIDTH = 248;
+const EDITOR_USE_CASE_HEIGHT = 66;
+const EDITOR_ACTOR_WIDTH = 132;
+const EDITOR_ACTOR_HEIGHT = 112;
+const EDITOR_SYSTEM_PADDING_X = 28;
+const EDITOR_SYSTEM_PADDING_TOP = 44;
+const EDITOR_SYSTEM_PADDING_BOTTOM = 24;
+const EDITOR_SYSTEM_NODE_ID = '__system_box__';
 
 type ProcessingState = {
   title: string;
@@ -130,42 +163,212 @@ function getAiProjectScope(session: SessionLoaded): AiProjectScope {
 }
 
 function readDiagramFromSession(session: SessionLoaded): DiagramModel | null {
+  let base: DiagramModel | null = null;
+
   if (session.diagramModelText) {
     try {
-      return JSON.parse(session.diagramModelText) as DiagramModel;
+      base = JSON.parse(session.diagramModelText) as DiagramModel;
     } catch {
       // Fallback to PlantUML below.
     }
   }
 
-  if (!session.plantumlText.trim()) return null;
-  try {
-    return plantumlToDiagramModel(session.plantumlText);
-  } catch {
-    return null;
+  if (!base && session.plantumlText.trim()) {
+    try {
+      base = plantumlToDiagramModel(session.plantumlText);
+    } catch {
+      return null;
+    }
   }
+
+  if (!base) return null;
+
+  // Reaplica apenas as curvas/estilos canônicos. O relayout só entra quando o
+  // modelo salvo não possui posições úteis, para não apagar ajustes manuais.
+  return normalizeDiagramForDisplay(
+    hasUsableNodePositions(base) ? base : relayoutDiagramModel(base),
+  );
+}
+
+async function prepareDiagramForEditor(session: SessionLoaded): Promise<DiagramModel | null> {
+  const base = readDiagramFromSession(session);
+  if (!base) return null;
+  return normalizeDiagramForDisplay(await relayoutDiagramModelWithGraphviz(base));
 }
 
 function relationEdgePatch(relationType: 'include' | 'extend'): Partial<Edge> {
+  const edgeColor = relationType === 'include' ? INCLUDE_EDGE_COLOR : EXTEND_EDGE_COLOR;
   return {
-    type: 'default',
-    pathOptions: { curvature: 0.22 },
+    type: 'smoothCurve',
     label: `<<${relationType}>>`,
     data: { relationType },
-    labelBgPadding: [8, 4],
-    labelBgBorderRadius: 4,
-    labelBgStyle: { fill: '#ffffff', fillOpacity: 0.95 },
-    labelStyle: {
-      fill: relationType === 'include' ? '#1d4ed8' : '#6d28d9',
-      fontWeight: 700,
-    },
-    markerEnd: { type: MarkerType.ArrowClosed },
+    markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor, width: 20, height: 20 },
     style: {
-      stroke: relationType === 'include' ? '#2563eb' : '#7c3aed',
-      strokeWidth: 1.35,
-      strokeDasharray: '7 5',
-      opacity: 0.42,
+      stroke: edgeColor,
+      strokeWidth: 2.6,
+      strokeDasharray: '6 5',
+      opacity: 0.98,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
     },
+  };
+}
+
+function getDiagramRelationType(edge: Edge): 'association' | 'include' | 'extend' {
+  const dataType = String(
+    (edge.data as { relationType?: unknown } | undefined)?.relationType || '',
+  );
+  if (dataType === 'include' || dataType === 'extend') return dataType;
+  const label = String(edge.label || '').toLowerCase();
+  if (label.includes('extend')) return 'extend';
+  if (label.includes('include')) return 'include';
+  return 'association';
+}
+
+function hasUsableNodePositions(model: DiagramModel): boolean {
+  return model.nodes.some((node) => {
+    const x = Number(node.position?.x);
+    const y = Number(node.position?.y);
+    return (Number.isFinite(x) && x !== 0) || (Number.isFinite(y) && y !== 0);
+  });
+}
+
+function isUseCaseNodeId(id: string): boolean {
+  return id.startsWith('UC');
+}
+
+function normalizeDiagramEdgeEndpoint(edge: Edge): Edge {
+  const relationType = getDiagramRelationType(edge);
+  if (relationType !== 'association') return edge;
+
+  const source = String(edge.source);
+  const target = String(edge.target);
+  const sourceIsUseCase = isUseCaseNodeId(source);
+  const targetIsUseCase = isUseCaseNodeId(target);
+  if (sourceIsUseCase === targetIsUseCase) return edge;
+
+  return {
+    ...edge,
+    source: sourceIsUseCase ? target : source,
+    target: sourceIsUseCase ? source : target,
+  };
+}
+
+/**
+ * Atribui um índice de "faixa" (lane) a cada aresta dentro do grupo de arestas
+ * que compartilham o mesmo nó de origem. Edges paralelas (mesma origem)
+ * recebem lanes distintas e contíguas, de modo que a curva de cada aresta
+ * possa ser deslocada lateralmente em uma quantidade DETERMINÍSTICA e
+ * DISTINTA — eliminando sobreposições por construção.
+ */
+function computeEdgeLanes(edges: Edge[]): Map<string, { index: number; count: number }> {
+  const groups = new Map<string, Edge[]>();
+  for (const edge of edges) {
+    const key = String(edge.source);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(edge);
+  }
+  const result = new Map<string, { index: number; count: number }>();
+  for (const group of groups.values()) {
+    // Ordenação estável por destino para que a numeração seja consistente
+    // entre renders e entre o editor e o renderizador estático (PDF).
+    group.sort((a, b) => String(a.target).localeCompare(String(b.target)));
+    const count = group.length;
+    group.forEach((edge, index) => {
+      result.set(String(edge.id), { index, count });
+    });
+  }
+  return result;
+}
+
+function normalizeDiagramForDisplay(model: DiagramModel): DiagramModel {
+  const normalizedEdges = model.edges.map(normalizeDiagramEdgeEndpoint);
+  const laneInfo = computeEdgeLanes(normalizedEdges);
+  const relationEdgeCount = normalizedEdges.filter(
+    (edge) => getDiagramRelationType(edge) !== 'association',
+  ).length;
+  const relationLabelsVisible = relationEdgeCount > 0;
+  const associationSourceCounts = normalizedEdges.reduce((counts, edge) => {
+    if (getDiagramRelationType(edge) !== 'association') return counts;
+    const key = String(edge.source);
+    counts.set(key, (counts.get(key) || 0) + 1);
+    return counts;
+  }, new Map<string, number>());
+
+  const displayEdges: Edge[] = normalizedEdges.map((edge): Edge => {
+    const relationType = getDiagramRelationType(edge);
+    const lane = laneInfo.get(String(edge.id)) || { index: 0, count: 1 };
+    const associationCount = associationSourceCounts.get(String(edge.source)) || 1;
+
+    if (relationType !== 'association') {
+      return {
+        ...edge,
+        ...relationEdgePatch(relationType),
+        data: {
+          ...(edge.data || {}),
+          relationType,
+          laneIndex: lane.index,
+          laneCount: lane.count,
+          labelVisible: relationLabelsVisible,
+        },
+      };
+    }
+
+    return {
+      ...edge,
+      type: 'smoothCurve',
+      label: '',
+      data: {
+        ...(edge.data || {}),
+        relationType,
+        laneIndex: lane.index,
+        laneCount: lane.count,
+        bundledAssociation: false,
+      },
+      markerEnd: undefined,
+      style: {
+        stroke: associationCount >= 8 ? '#cbd5e1' : '#94a3b8',
+        strokeWidth: associationCount >= 8 ? 1.1 : associationCount >= 4 ? 1.25 : 1.55,
+        opacity: associationCount >= 8 ? 0.2 : associationCount >= 4 ? 0.36 : 0.58,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      } satisfies CSSProperties,
+    };
+  });
+
+  return {
+    ...model,
+    nodes: model.nodes.map((node) => {
+      if (String(node.id).startsWith('UC')) {
+        return {
+          ...node,
+          type: 'useCase',
+          className: 'diagram-node diagram-node--usecase',
+          style: {
+            width: EDITOR_USE_CASE_WIDTH,
+            height: EDITOR_USE_CASE_HEIGHT,
+            border: 0,
+            background: 'transparent',
+            padding: 0,
+          },
+        };
+      }
+      return {
+        ...node,
+        type: 'actor',
+        className: 'diagram-node diagram-node--actor',
+        style: {
+          width: EDITOR_ACTOR_WIDTH,
+          height: EDITOR_ACTOR_HEIGHT,
+          border: 0,
+          background: 'transparent',
+          padding: 0,
+        },
+      };
+    }),
+    edges: displayEdges.sort((a, b) =>
+      getDiagramRelationType(a).localeCompare(getDiagramRelationType(b)),
+    ),
   };
 }
 
@@ -179,33 +382,339 @@ function slugFileName(value: string) {
   return clean || 'extrator-engenharia-software';
 }
 
-function downloadTextFile(filename: string, contents: string, type: string) {
-  const blob = new Blob([contents], { type });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
-
 function getAccessRoleLabel(role: AccessRole | null) {
   if (role === 'admin') return 'admin';
   if (role === 'user') return 'user';
   return 'sem acesso';
 }
 
-const minimapNodeColor = (node: { id?: unknown }) =>
-  String(node.id || '').startsWith('UC') ? '#2563eb' : '#64748b';
+function ActorDiagramNode({ data }: NodeProps<{ label?: string }>) {
+  const label = String(data?.label || 'Ator');
+
+  return (
+    <div className="diagram-actor-node">
+      <Handle type="target" position={Position.Left} className="diagram-actor-node__handle" />
+      <svg className="diagram-actor-node__figure" viewBox="0 0 72 86" role="img" aria-hidden="true">
+        <circle cx="36" cy="14" r="10" />
+        <path d="M36 24v26M18 35h36M36 50 20 76M36 50l16 26" />
+      </svg>
+      <div className="diagram-actor-node__label">{label}</div>
+      <Handle type="source" position={Position.Right} className="diagram-actor-node__handle" />
+    </div>
+  );
+}
+
+function UseCaseDiagramNode({ data }: NodeProps<{ label?: string }>) {
+  const label = String(data?.label || 'Caso de uso');
+
+  return (
+    <div className="diagram-usecase-node">
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="left"
+        className="diagram-usecase-node__handle"
+      />
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="top"
+        className="diagram-usecase-node__handle"
+      />
+      <svg
+        className="diagram-usecase-node__shape"
+        viewBox="0 0 248 66"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <ellipse cx="124" cy="33" rx="122" ry="31" />
+      </svg>
+      <span className="diagram-usecase-node__label">{label}</span>
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="right"
+        className="diagram-usecase-node__handle"
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="bottom"
+        className="diagram-usecase-node__handle"
+      />
+    </div>
+  );
+}
+
+function SystemBackdropNode({
+  data,
+}: NodeProps<{ label?: string; width?: number; height?: number }>) {
+  const label = String(data?.label || 'Sistema');
+  const width = Number(data?.width) || 0;
+  const height = Number(data?.height) || 0;
+
+  return (
+    <div className="diagram-system-backdrop" style={{ width, height }}>
+      <span className="diagram-system-backdrop__label">{label}</span>
+    </div>
+  );
+}
+
+const diagramNodeTypes = {
+  actor: ActorDiagramNode,
+  useCase: UseCaseDiagramNode,
+  systemBackdrop: SystemBackdropNode,
+};
+
+/**
+ * Curva Bezier com sistema de "lanes" (faixas determinísticas).
+ *
+ * Cada aresta carrega `laneIndex` / `laneCount` (atribuídos em
+ * {@link computeEdgeLanes}) — todas as arestas que compartilham a mesma
+ * origem recebem índices contíguos `0..N-1`. A partir desses índices
+ * calculamos um deslocamento lateral ÚNICO para cada aresta: a aresta 0
+ * fica empurrada de um lado, a N-1 do outro, e as intermediárias se
+ * distribuem uniformemente entre eles. Assim, arestas paralelas
+ * NUNCA se sobrepõem — por construção, e não por sorte de hash.
+ *
+ * Os pontos de controle saem perpendicularmente às tangentes das handles
+ * (Right, Left, Top, Bottom) — padrão do `getBezierPath` do React Flow —
+ * mas com offset ENCURTADO para que a curva comece a "abrir" mais cedo,
+ * em vez de andar metade do caminho na horizontal antes de virar.
+ */
+function buildSmoothCurvePath(
+  sourceX: number,
+  sourceY: number,
+  sourcePosition: Position,
+  targetX: number,
+  targetY: number,
+  targetPosition: Position,
+  laneIndex: number,
+  laneCount: number,
+  relationType: 'association' | 'include' | 'extend',
+): { path: string; labelX: number; labelY: number } {
+  const dx = targetX - sourceX;
+  const dy = targetY - sourceY;
+  const distance = Math.hypot(dx, dy);
+  if (distance < 1) {
+    return {
+      path: `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`,
+      labelX: sourceX,
+      labelY: sourceY,
+    };
+  }
+
+  const sourceTangent = tangentFromPosition(sourcePosition);
+  const targetTangent = tangentFromPosition(targetPosition);
+
+  // Offset tangencial CURTO: as curvas começam a abrir cedo, fazendo arestas
+  // paralelas divergirem antes de chegarem à metade do caminho.
+  const tangentOffset = Math.max(36, Math.min(150, distance * 0.24));
+
+  // Afastamento lateral canônico: até aresta única ganha curvatura visível,
+  // e grupos com mesma origem são distribuídos em faixas determinísticas.
+  const lateral = getCurveLateralOffset(distance, laneIndex, laneCount, relationType);
+
+  const perpX = -dy / distance;
+  const perpY = dx / distance;
+
+  const c1x = sourceX + sourceTangent.x * tangentOffset + perpX * lateral;
+  const c1y = sourceY + sourceTangent.y * tangentOffset + perpY * lateral;
+  const c2x = targetX + targetTangent.x * tangentOffset + perpX * lateral;
+  const c2y = targetY + targetTangent.y * tangentOffset + perpY * lateral;
+
+  return {
+    path: `M ${sourceX} ${sourceY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${targetX} ${targetY}`,
+    labelX: (sourceX + targetX) / 2 + perpX * lateral * 0.7,
+    labelY: (sourceY + targetY) / 2 + perpY * lateral * 0.7,
+  };
+}
+
+function buildBundledAssociationPath(
+  sourceX: number,
+  sourceY: number,
+  targetX: number,
+  targetY: number,
+): { path: string; labelX: number; labelY: number } {
+  const dx = targetX - sourceX;
+  const direction = dx >= 0 ? 1 : -1;
+  const distance = Math.max(1, Math.abs(dx));
+  const trunkX = sourceX + direction * Math.max(72, Math.min(150, distance * 0.28));
+  const turn = Math.max(30, Math.min(82, distance * 0.18));
+  const midY = (sourceY + targetY) / 2;
+
+  return {
+    path: [
+      `M ${sourceX} ${sourceY}`,
+      `C ${sourceX + direction * turn} ${sourceY}, ${trunkX - direction * turn * 0.35} ${sourceY}, ${trunkX} ${sourceY}`,
+      `C ${trunkX} ${midY}, ${trunkX} ${midY}, ${trunkX} ${targetY}`,
+      `C ${trunkX + direction * turn * 0.35} ${targetY}, ${targetX - direction * turn} ${targetY}, ${targetX} ${targetY}`,
+    ].join(' '),
+    labelX: trunkX,
+    labelY: midY,
+  };
+}
+
+function getCurveLateralOffset(
+  distance: number,
+  laneIndex: number,
+  laneCount: number,
+  relationType: 'association' | 'include' | 'extend',
+) {
+  const spread = Math.max(44, Math.min(150, distance * 0.24));
+  const base =
+    relationType === 'association'
+      ? Math.max(28, Math.min(76, distance * 0.1))
+      : Math.max(42, Math.min(104, distance * 0.14));
+
+  if (laneCount <= 1) return base;
+
+  const center = (laneCount - 1) / 2;
+  const raw = laneIndex - center;
+  if (Math.abs(raw) < 0.001) return base;
+  return raw * (spread / Math.max(1, center));
+}
+
+function tangentFromPosition(position: Position): { x: number; y: number } {
+  switch (position) {
+    case Position.Left:
+      return { x: -1, y: 0 };
+    case Position.Right:
+      return { x: 1, y: 0 };
+    case Position.Top:
+      return { x: 0, y: -1 };
+    case Position.Bottom:
+      return { x: 0, y: 1 };
+    default:
+      return { x: 1, y: 0 };
+  }
+}
+
+type SmoothCurveEdgeData = {
+  relationType?: 'association' | 'include' | 'extend';
+  laneIndex?: number;
+  laneCount?: number;
+  bundledAssociation?: boolean;
+  labelVisible?: boolean;
+};
+
+function SmoothCurveEdge({
+  id,
+  sourceX,
+  sourceY,
+  sourcePosition,
+  targetX,
+  targetY,
+  targetPosition,
+  data,
+  label,
+  style,
+  markerEnd,
+  selected,
+}: EdgeProps<SmoothCurveEdgeData>) {
+  const laneIndex = typeof data?.laneIndex === 'number' ? data.laneIndex : 0;
+  const laneCount = typeof data?.laneCount === 'number' && data.laneCount > 0 ? data.laneCount : 1;
+  const relationType = data?.relationType || 'association';
+  const { path, labelX, labelY } =
+    relationType === 'association' && data?.bundledAssociation
+      ? buildBundledAssociationPath(sourceX, sourceY, targetX, targetY)
+      : buildSmoothCurvePath(
+          sourceX,
+          sourceY,
+          sourcePosition,
+          targetX,
+          targetY,
+          targetPosition,
+          laneIndex,
+          laneCount,
+          relationType,
+        );
+  const labelText =
+    relationType === 'association' || data?.labelVisible === false
+      ? ''
+      : label
+        ? String(label)
+        : '';
+  const selectedStyle: CSSProperties = selected
+    ? { filter: 'drop-shadow(0 0 4px rgba(37, 99, 235, 0.35))' }
+    : {};
+
+  return (
+    <>
+      {relationType !== 'association' ? (
+        <path
+          d={path}
+          fill="none"
+          stroke="#ffffff"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeOpacity={0.92}
+          strokeWidth={7}
+          pointerEvents="none"
+        />
+      ) : null}
+      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ ...style, ...selectedStyle }} />
+      {labelText ? (
+        <EdgeLabelRenderer>
+          <div
+            className={`diagram-edge-label diagram-edge-label--${relationType}`}
+            style={{
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            }}
+          >
+            {labelText}
+          </div>
+        </EdgeLabelRenderer>
+      ) : null}
+    </>
+  );
+}
+
+const diagramEdgeTypes = {
+  smoothCurve: SmoothCurveEdge,
+};
+
+const minimapNodeColor = (node: { id?: unknown }) => {
+  const id = String(node.id || '');
+  if (id === EDITOR_SYSTEM_NODE_ID) return '#e2e8f0';
+  return id.startsWith('UC') ? '#2563eb' : '#64748b';
+};
+
+function buildEditorNodes(diagram: DiagramModel | null) {
+  if (!diagram) return [];
+  const ucNodes = diagram.nodes.filter((node) => String(node.id).startsWith('UC'));
+  if (!ucNodes.length) return diagram.nodes;
+
+  const minX = Math.min(...ucNodes.map((node) => node.position.x));
+  const minY = Math.min(...ucNodes.map((node) => node.position.y));
+  const maxX = Math.max(...ucNodes.map((node) => node.position.x + EDITOR_USE_CASE_WIDTH));
+  const maxY = Math.max(...ucNodes.map((node) => node.position.y + EDITOR_USE_CASE_HEIGHT));
+  const width = maxX - minX + EDITOR_SYSTEM_PADDING_X * 2;
+  const height = maxY - minY + EDITOR_SYSTEM_PADDING_TOP + EDITOR_SYSTEM_PADDING_BOTTOM;
+
+  const backdrop = {
+    id: EDITOR_SYSTEM_NODE_ID,
+    type: 'systemBackdrop',
+    position: { x: minX - EDITOR_SYSTEM_PADDING_X, y: minY - EDITOR_SYSTEM_PADDING_TOP },
+    data: { label: diagram.systemName || 'Sistema', width, height },
+    draggable: false,
+    selectable: false,
+    deletable: false,
+    focusable: false,
+    className: 'diagram-node diagram-node--system',
+    style: { width, height, zIndex: -1 },
+    zIndex: -1,
+  } as DiagramModel['nodes'][number];
+
+  return [backdrop, ...diagram.nodes];
+}
 
 function DiagramFitView({ revision }: { revision: number }) {
   const { fitView } = useReactFlow();
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      fitView({ padding: 0.2, duration: 240 });
+      fitView({ padding: 0.12, duration: 240, minZoom: 0.52, maxZoom: 1 });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [revision, fitView]);
@@ -264,10 +773,15 @@ function App() {
   const [diagram, setDiagram] = useState<DiagramModel | null>(null);
   const [generatingUml, setGeneratingUml] = useState(false);
   const [savingDiagram, setSavingDiagram] = useState(false);
+  const [diagramViewMode, setDiagramViewMode] = useState<DiagramViewMode>('edit');
   const [newEdgeKind, setNewEdgeKind] = useState<NewEdgeKind>('association');
   const [diagramMiniMap, setDiagramMiniMap] = useState(true);
   const [diagramSnapToGrid, setDiagramSnapToGrid] = useState(true);
+  const [relationsPanelOpen, setRelationsPanelOpen] = useState(false);
   const [diagramLayoutRevision, setDiagramLayoutRevision] = useState(0);
+  const [diagramPreviewUrl, setDiagramPreviewUrl] = useState('');
+  const [diagramPreviewLoading, setDiagramPreviewLoading] = useState(false);
+  const [diagramPreviewPage, setDiagramPreviewPage] = useState<DiagramPdfPageSize | null>(null);
   const [userStories, setUserStories] = useState<UserStory[]>([]);
   const [generatingStories, setGeneratingStories] = useState(false);
   const [processing, setProcessing] = useState<ProcessingState | null>(null);
@@ -295,23 +809,26 @@ function App() {
     }
   }, []);
 
-  const flushDiagramAutosave = useCallback(async (s: AutosaveSession, model: DiagramModel, puml: string) => {
-    if (!s || !model.nodes.length || !puml.trim()) return;
-    try {
-      await updateSession(s.uid, s.id, {
-        plantumlText: puml,
-        diagramModelText: JSON.stringify(model),
-        statusText: s.statusText,
-      });
-      setActiveSession((prev) =>
-        prev && prev.id === s.id && prev.uid === s.uid
-          ? { ...prev, plantumlText: puml, diagramModelText: JSON.stringify(model) }
-          : prev,
-      );
-    } catch (e) {
-      setError(getErrorMessage(e));
-    }
-  }, []);
+  const flushDiagramAutosave = useCallback(
+    async (s: AutosaveSession, model: DiagramModel, puml: string) => {
+      if (!s || !model.nodes.length || !puml.trim()) return;
+      try {
+        await updateSession(s.uid, s.id, {
+          plantumlText: puml,
+          diagramModelText: JSON.stringify(model),
+          statusText: s.statusText,
+        });
+        setActiveSession((prev) =>
+          prev && prev.id === s.id && prev.uid === s.uid
+            ? { ...prev, plantumlText: puml, diagramModelText: JSON.stringify(model) }
+            : prev,
+        );
+      } catch (e) {
+        setError(getErrorMessage(e));
+      }
+    },
+    [],
+  );
 
   const scheduleDiagramAutosave = useCallback(
     (model: DiagramModel, puml: string) => {
@@ -331,6 +848,54 @@ function App() {
       }, 850);
     },
     [flushDiagramAutosave],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = '';
+
+    setDiagramPreviewUrl('');
+    setDiagramPreviewPage(null);
+    if (!diagram) {
+      setDiagramPreviewLoading(false);
+      return () => {};
+    }
+
+    setDiagramPreviewLoading(true);
+    renderUseCaseDiagramSvg(diagram)
+      .then((rendered) => {
+        const nextUrl = URL.createObjectURL(
+          new Blob([rendered.svg], { type: 'image/svg+xml;charset=utf-8' }),
+        );
+        if (cancelled) {
+          URL.revokeObjectURL(nextUrl);
+          return;
+        }
+        objectUrl = nextUrl;
+        setDiagramPreviewUrl(nextUrl);
+        setDiagramPreviewPage(getUseCaseDiagramPdfPageSize(rendered.width, rendered.height));
+      })
+      .catch((e) => {
+        if (!cancelled) setError(getErrorMessage(e));
+      })
+      .finally(() => {
+        if (!cancelled) setDiagramPreviewLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [diagram]);
+
+  const diagramPreviewPageStyle = useMemo(
+    () =>
+      diagramPreviewPage
+        ? ({
+            '--diagram-pdf-page-ratio': `${diagramPreviewPage.width} / ${diagramPreviewPage.height}`,
+          } as CSSProperties)
+        : undefined,
+    [diagramPreviewPage],
   );
 
   const isCurrentSession = useCallback(
@@ -495,6 +1060,8 @@ function App() {
     }
   }
 
+  const editorNodes = useMemo(() => buildEditorNodes(diagram), [diagram]);
+
   const relationRows = useMemo(() => {
     if (!diagram) return [];
     const nodeNameById = new Map(
@@ -505,16 +1072,12 @@ function App() {
     );
 
     return diagram.edges
-      .filter((edge) => String(edge.label || '').includes('<<'))
+      .filter((edge) => getDiagramRelationType(edge) !== 'association')
       .map((edge) => ({
         id: String(edge.id),
         source: nodeNameById.get(String(edge.source)) || String(edge.source),
         target: nodeNameById.get(String(edge.target)) || String(edge.target),
-        type: String(edge.label || '')
-          .toLowerCase()
-          .includes('extend')
-          ? 'extend'
-          : 'include',
+        type: getDiagramRelationType(edge) === 'extend' ? 'extend' : 'include',
       }));
   }, [diagram]);
 
@@ -630,24 +1193,37 @@ function App() {
   async function handleSelectSession(item: SessionListItem) {
     clearDiagramAutosaveTimer();
     setError('');
-    showProcessing('Abrindo análise', 'Carregando dados salvos da sessão.', 1, 2);
+    showProcessing('Abrindo análise', 'Carregando dados salvos da sessão.', 1, 3);
     try {
       const loaded =
         isAdmin && item.uid !== user?.uid
           ? await loadSession(item.uid, item.id)
           : await loadMySession(item.id);
-      showProcessing('Abrindo análise', 'Restaurando requisitos, casos de uso e diagrama.', 2, 2);
-      setActiveSession(loaded);
+      showProcessing('Abrindo análise', 'Restaurando requisitos e casos de uso.', 2, 3);
+      const loadedDiagram = await prepareDiagramForEditor(loaded);
+      const loadedPlantuml = loadedDiagram
+        ? diagramModelToPlantuml(loadedDiagram)
+        : loaded.plantumlText || '';
+
+      showProcessing('Abrindo análise', 'Organizando o diagrama editável.', 3, 3);
+      setActiveSession({
+        ...loaded,
+        plantumlText: loadedPlantuml,
+        diagramModelText: loadedDiagram ? JSON.stringify(loadedDiagram) : loaded.diagramModelText,
+      });
       setActiveView('workspace');
       setSidebarOpen(false);
       setDescriptionText(loaded.descriptionText || '');
       setRequirements(loaded.requirementsText ? JSON.parse(loaded.requirementsText) : []);
       setUseCases(loaded.useCasesText ? JSON.parse(loaded.useCasesText).map(normalizeUseCase) : []);
-      setPlantuml(loaded.plantumlText || '');
-      setDiagram(readDiagramFromSession(loaded));
+      setPlantuml(loadedPlantuml);
+      setDiagram(loadedDiagram);
+      if (loadedDiagram) {
+        setDiagramViewMode('edit');
+        setDiagramLayoutRevision((value) => value + 1);
+      }
       setUserStories(loaded.userStoriesText ? JSON.parse(loaded.userStoriesText) : []);
       setPhase(getRecommendedPhase(loaded.statusText));
-      setDiagramLayoutRevision((value) => value + 1);
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -956,12 +1532,15 @@ function App() {
     setGeneratingUml(true);
     showProcessing('Etapa 3: diagrama', 'Montando nós a partir dos casos de uso.', 1, 4);
     try {
-      const model = buildDiagramModelFromUseCases(sourceUseCases, session.title || 'Sistema');
-      showProcessing('Etapa 3: diagrama', 'Aplicando associações, include e extend.', 2, 4);
+      const baseModel = buildDiagramModelFromUseCases(sourceUseCases, session.title || 'Sistema');
+      showProcessing('Etapa 3: diagrama', 'Calculando layout legível para o canvas.', 2, 4);
+      const model = normalizeDiagramForDisplay(await relayoutDiagramModelWithGraphviz(baseModel));
       const nextPlantuml = diagramModelToPlantuml(model);
       if (!isCurrentSession(session)) return;
       setPlantuml(nextPlantuml);
       setDiagram(model);
+      setDiagramViewMode('edit');
+      setDiagramLayoutRevision((value) => value + 1);
       const diagramModelText = JSON.stringify(model);
       showProcessing('Etapa 3: diagrama', 'Salvando modelo gráfico e PlantUML.', 3, 4);
       await updateSession(session.uid, session.id, {
@@ -978,7 +1557,6 @@ function App() {
         statusText: 'uml_generated',
       });
       setPhase(3);
-      setDiagramLayoutRevision((value) => value + 1);
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -990,7 +1568,7 @@ function App() {
   function syncDiagram(updater: (current: DiagramModel) => DiagramModel) {
     setDiagram((current) => {
       if (!current) return current;
-      const next = updater(current);
+      const next = normalizeDiagramForDisplay(updater(current));
       const nextPuml = diagramModelToPlantuml(next);
       setPlantuml(nextPuml);
       scheduleDiagramAutosave(next, nextPuml);
@@ -1035,7 +1613,9 @@ function App() {
       3,
     );
     try {
-      const model = sourceDiagram || plantumlToDiagramModel(sourcePlantuml);
+      const model = normalizeDiagramForDisplay(
+        sourceDiagram || plantumlToDiagramModel(sourcePlantuml),
+      );
       const nextPlantuml = diagramModelToPlantuml(model);
       const diagramModelText = JSON.stringify(model);
       const nextStatus = statusText || session.statusText;
@@ -1127,12 +1707,6 @@ function App() {
     }
   }
 
-  function handleDownloadDiagramXml() {
-    if (!diagram || !activeSession) return;
-    const filename = `${slugFileName(activeSession.title || 'diagrama')}.drawio`;
-    downloadTextFile(filename, diagramModelToDrawioXml(diagram), 'application/xml;charset=utf-8');
-  }
-
   async function handleExportPdf() {
     if (!activeSession || !userStories.length) return;
     setError('');
@@ -1155,10 +1729,7 @@ function App() {
     }
   }
 
-  async function handleExportSessionPdf(
-    item: SessionListItem,
-    event?: MouseEvent<HTMLElement>,
-  ) {
+  async function handleExportSessionPdf(item: SessionListItem, event?: MouseEvent<HTMLElement>) {
     event?.stopPropagation();
     if (!item.hasUserStories) return;
 
@@ -1180,7 +1751,7 @@ function App() {
         descriptionText: loaded.descriptionText,
         requirements: loadedRequirements,
         useCases: loadedUseCases,
-        diagram: readDiagramFromSession(loaded),
+        diagram: await prepareDiagramForEditor(loaded),
         userStories: loadedUserStories,
         filename: `${slugFileName(loaded.title || item.title || 'relatorio')}.pdf`,
       });
@@ -1191,10 +1762,7 @@ function App() {
     }
   }
 
-  async function handleDeleteSession(
-    item: SessionListItem,
-    event?: MouseEvent<HTMLElement>,
-  ) {
+  async function handleDeleteSession(item: SessionListItem, event?: MouseEvent<HTMLElement>) {
     event?.stopPropagation();
     const title = item.title || 'esta análise';
     if (!window.confirm(`Excluir "${title}"? Esta ação não pode ser desfeita.`)) return;
@@ -1248,30 +1816,37 @@ function App() {
 
     const source = String(connection.source);
     const target = String(connection.target);
-    const relationAllowed = source.startsWith('UC') && target.startsWith('UC');
-    const relationType =
-      relationAllowed && newEdgeKind !== 'association' ? newEdgeKind : 'association';
+    const sourceIsUseCase = isUseCaseNodeId(source);
+    const targetIsUseCase = isUseCaseNodeId(target);
 
-    if (relationType === 'association') {
+    if (sourceIsUseCase && targetIsUseCase) {
+      const relationType = newEdgeKind === 'extend' ? 'extend' : 'include';
       return {
         ...connection,
-        id: `assoc:${source}--${target}:${Date.now()}`,
+        id: `rel:${source}..>${target}:${relationType}:${Date.now()}`,
+        ...relationEdgePatch(relationType),
+      };
+    }
+
+    if (sourceIsUseCase !== targetIsUseCase) {
+      const actor = sourceIsUseCase ? target : source;
+      const useCase = sourceIsUseCase ? source : target;
+      return {
+        id: `assoc:${actor}--${useCase}:${Date.now()}`,
+        source: actor,
+        target: useCase,
         label: '',
         data: { relationType: 'association' },
-        type: 'straight',
+        type: 'smoothCurve',
         style: {
-          stroke: '#64748b',
-          strokeWidth: 1.15,
-          opacity: 0.38,
+          stroke: '#94a3b8',
+          strokeWidth: 1.5,
+          opacity: 0.85,
         },
       };
     }
 
-    return {
-      ...connection,
-      id: `rel:${source}..>${target}:${relationType}:${Date.now()}`,
-      ...relationEdgePatch(relationType),
-    };
+    return null;
   }
 
   function onConnect(connection: Connection) {
@@ -1283,20 +1858,24 @@ function App() {
     }));
   }
 
-  function handlePlantumlChange(value: string) {
-    setPlantuml(value);
-    try {
-      const next = plantumlToDiagramModel(value);
-      setDiagram(next);
-      scheduleDiagramAutosave(next, value);
-    } catch {
-      // Keep the last valid diagram while the user is editing the code.
-    }
-  }
+  async function handleRelayoutDiagram() {
+    const current = diagram;
+    if (!current) return;
 
-  function handleRelayoutDiagram() {
-    syncDiagram((current) => relayoutDiagramModel(current));
-    setDiagramLayoutRevision((value) => value + 1);
+    setError('');
+    showProcessing('Reorganizando diagrama', 'Calculando posições com base nas relações.', 1, 1);
+    try {
+      const next = normalizeDiagramForDisplay(await relayoutDiagramModelWithGraphviz(current));
+      const nextPlantuml = diagramModelToPlantuml(next);
+      setDiagram(next);
+      setPlantuml(nextPlantuml);
+      scheduleDiagramAutosave(next, nextPlantuml);
+      setDiagramLayoutRevision((value) => value + 1);
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setProcessing(null);
+    }
   }
 
   function handleFitDiagramView() {
@@ -1306,9 +1885,8 @@ function App() {
   const phaseLocked = wizard.phaseLocked;
   const activeStatus = activeSession?.statusText || '';
   const canGenerateDiagram = activeStatus === 'use_cases_validated' && useCases.length > 0;
-  const canSaveDiagram = Boolean(plantuml.trim());
-  const canDownloadDiagram = Boolean(diagram);
-  const canValidateDiagram = Boolean(diagram && plantuml.trim());
+  const canSaveDiagram = Boolean(diagram);
+  const canValidateDiagram = Boolean(diagram);
 
   return (
     <>
@@ -1788,261 +2366,362 @@ function App() {
                   />
 
                   {phase === 3 ? (
-                    <>
-                      <h5 className="mb-3">Etapa 3 – Diagrama</h5>
-                      <Stack direction="horizontal" gap={3} className="action-bar mb-3 flex-wrap">
-                        {canGenerateDiagram || generatingUml ? (
-                          <Button
-                            onClick={handleGenerateUml}
-                            disabled={generatingUml}
-                          >
-                            {generatingUml ? 'Gerando…' : 'Gerar diagrama'}
-                          </Button>
-                        ) : null}
-                        {canSaveDiagram || savingDiagram ? (
-                          <Button
-                            variant="outline-primary"
-                            onClick={handleSaveDiagramCode}
-                            disabled={savingDiagram}
-                          >
-                            {savingDiagram ? 'Salvando…' : 'Salvar diagrama'}
-                          </Button>
-                        ) : null}
-                        {canValidateDiagram ? (
-                          <Button
-                            variant="success"
-                            onClick={handleValidateUml}
-                            disabled={savingDiagram}
-                          >
-                            Validar diagrama
-                          </Button>
-                        ) : null}
-                        {canDownloadDiagram ? (
-                          <Button
-                            variant="outline-secondary"
-                            onClick={handleDownloadDiagramXml}
-                          >
-                            Baixar draw.io
-                          </Button>
-                        ) : null}
-                        <div className="status-pill text-muted small ms-md-auto">
-                          status: <code>{getStatusLabel(activeSession.statusText)}</code>
+                    <section className="diagram-stage" aria-labelledby="diagram-stage-title">
+                      <header className="diagram-stage__header">
+                        <div className="diagram-stage__heading">
+                          <span className="diagram-stage__eyebrow">Etapa 3</span>
+                          <h3 id="diagram-stage-title" className="diagram-stage__title">
+                            Diagrama de casos de uso
+                          </h3>
+                          <p className="diagram-stage__lede">
+                            Edite visualmente, valide as relações e exporte para o PDF final.
+                          </p>
                         </div>
-                      </Stack>
+                        <div className="diagram-stage__meta">
+                          <Badge
+                            bg="light"
+                            text="dark"
+                            className="diagram-stage__status"
+                            title="Estado atual desta análise"
+                          >
+                            <span className="diagram-stage__status-dot" aria-hidden="true" />
+                            {getStatusLabel(activeSession.statusText)}
+                          </Badge>
+                          <div
+                            className="diagram-stage__primary-actions"
+                            role="group"
+                            aria-label="Ações primárias do diagrama"
+                          >
+                            {canGenerateDiagram && !diagram ? (
+                              <Button
+                                variant="primary"
+                                onClick={handleGenerateUml}
+                                disabled={generatingUml}
+                              >
+                                {generatingUml ? 'Gerando…' : 'Gerar diagrama'}
+                              </Button>
+                            ) : null}
+                            {canSaveDiagram || savingDiagram ? (
+                              <Button
+                                variant="outline-primary"
+                                onClick={handleSaveDiagramCode}
+                                disabled={savingDiagram}
+                              >
+                                {savingDiagram ? 'Salvando…' : 'Salvar diagrama'}
+                              </Button>
+                            ) : null}
+                            {canValidateDiagram ? (
+                              <Button
+                                variant="primary"
+                                onClick={handleValidateUml}
+                                disabled={savingDiagram}
+                              >
+                                Validar diagrama
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </header>
 
-                      {plantuml.trim() ? (
+                      {diagram || plantuml.trim() ? (
                         <div className="diagram-stage-fullwidth">
                           <Card className="diagram-editor-card mb-3">
-                            <Card.Header className="py-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
-                              <div>
-                                <strong>Editor visual</strong>
-                                <div className="text-muted small fw-normal">
-                                  Arraste nós, conecte com o tipo escolhido e use as ferramentas à
-                                  direita. A grade magnética (opcional) alinha ao soltar.
-                                </div>
+                            <Card.Header className="diagram-card-header">
+                              <div
+                                className="diagram-view-tabs"
+                                role="tablist"
+                                aria-label="Modo de visualização do diagrama"
+                              >
+                                <button
+                                  type="button"
+                                  role="tab"
+                                  aria-selected={diagramViewMode === 'edit'}
+                                  className={`diagram-view-tabs__tab${
+                                    diagramViewMode === 'edit'
+                                      ? ' diagram-view-tabs__tab--active'
+                                      : ''
+                                  }`}
+                                  onClick={() => setDiagramViewMode('edit')}
+                                >
+                                  Editar diagrama
+                                </button>
+                                <button
+                                  type="button"
+                                  role="tab"
+                                  aria-selected={diagramViewMode === 'preview'}
+                                  className={`diagram-view-tabs__tab${
+                                    diagramViewMode === 'preview'
+                                      ? ' diagram-view-tabs__tab--active'
+                                      : ''
+                                  }`}
+                                  onClick={() => setDiagramViewMode('preview')}
+                                >
+                                  Prévia do PDF
+                                </button>
                               </div>
-                              <div className="text-muted small">
-                                Atalhos: controles no canto inferior esquerdo; mini-mapa opcional.
+                              <div className="diagram-card-header__actions">
+                                {canGenerateDiagram || generatingUml ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline-secondary"
+                                    onClick={handleGenerateUml}
+                                    disabled={generatingUml}
+                                    title="Gera o diagrama a partir dos casos de uso validados"
+                                  >
+                                    {generatingUml ? 'Gerando…' : 'Gerar diagrama'}
+                                  </Button>
+                                ) : null}
                               </div>
                             </Card.Header>
                             <Card.Body className="p-0">
-                              {diagram ? (
-                                <div className="diagram-toolbar border-bottom px-3 py-2 d-flex flex-wrap align-items-center gap-2">
-                                  <span className="text-muted small me-1">Nova conexão</span>
-                                  <Form.Select
-                                    size="sm"
-                                    className="edge-kind-select"
-                                    value={newEdgeKind}
-                                    onChange={(e) =>
-                                      setNewEdgeKind(e.target.value as NewEdgeKind)
-                                    }
-                                    aria-label="Tipo de nova conexão entre nós"
+                              {diagram && diagramViewMode === 'edit' ? (
+                                <div className="diagram-toolbar">
+                                  <div
+                                    className="diagram-toolbar__group"
+                                    aria-label="Controles de layout"
                                   >
-                                    <option value="association">Associação (ator–UC)</option>
-                                    <option value="include">Include (UC–UC)</option>
-                                    <option value="extend">Extend (UC–UC)</option>
-                                  </Form.Select>
-                                  <Form.Check
-                                    type="switch"
-                                    id="diagram-snap-grid"
-                                    className="diagram-snap-switch mb-0"
-                                    checked={diagramSnapToGrid}
-                                    onChange={(e) => setDiagramSnapToGrid(e.target.checked)}
-                                    title="Ao arrastar, os nós alinham à malha de 16x16 px"
-                                    label="Grade magnética"
-                                  />
-                                  <ButtonGroup size="sm" className="ms-md-auto flex-wrap">
-                                    <Button
-                                      variant="outline-secondary"
-                                      onClick={handleFitDiagramView}
-                                      title="Recalcula o enquadramento do diagrama na área"
+                                    <span className="diagram-toolbar__label">Layout</span>
+                                    <ButtonGroup size="sm">
+                                      <Button
+                                        variant="outline-secondary"
+                                        onClick={handleRelayoutDiagram}
+                                        title="Recalcula a organização dos nós minimizando cruzamentos"
+                                      >
+                                        Reorganizar
+                                      </Button>
+                                      <Button
+                                        variant="outline-secondary"
+                                        onClick={handleFitDiagramView}
+                                        title="Recalcula o enquadramento do diagrama na área"
+                                      >
+                                        Encaixar
+                                      </Button>
+                                    </ButtonGroup>
+                                  </div>
+                                  <div
+                                    className="diagram-toolbar__group"
+                                    aria-label="Tipo de nova conexão"
+                                  >
+                                    <span className="diagram-toolbar__label">Nova conexão</span>
+                                    <Form.Select
+                                      size="sm"
+                                      className="edge-kind-select"
+                                      value={newEdgeKind}
+                                      onChange={(e) =>
+                                        setNewEdgeKind(e.target.value as NewEdgeKind)
+                                      }
+                                      aria-label="Tipo de nova conexão entre nós"
                                     >
-                                      Encaixar na tela
-                                    </Button>
+                                      <option value="association">Associação (ator–UC)</option>
+                                      <option value="include">Include (UC–UC)</option>
+                                      <option value="extend">Extend (UC–UC)</option>
+                                    </Form.Select>
+                                  </div>
+                                  <div
+                                    className="diagram-toolbar__group diagram-toolbar__group--end"
+                                    aria-label="Exibição do canvas"
+                                  >
+                                    <Form.Check
+                                      type="switch"
+                                      id="diagram-snap-grid"
+                                      className="diagram-snap-switch mb-0"
+                                      checked={diagramSnapToGrid}
+                                      onChange={(e) => setDiagramSnapToGrid(e.target.checked)}
+                                      title="Ao arrastar, os nós alinham à malha de 16x16 px"
+                                      label="Grade magnética"
+                                    />
                                     <Button
-                                      variant="outline-secondary"
-                                      onClick={handleRelayoutDiagram}
-                                      title="Reposiciona nós com base nas relações include/extend"
-                                    >
-                                      Reorganizar layout
-                                    </Button>
-                                    <Button
+                                      size="sm"
                                       variant={diagramMiniMap ? 'secondary' : 'outline-secondary'}
                                       onClick={() => setDiagramMiniMap((value) => !value)}
+                                      title="Alterna o mini-mapa do canvas"
                                     >
-                                      {diagramMiniMap ? 'Ocultar mini-mapa' : 'Mostrar mini-mapa'}
+                                      Mini-mapa
                                     </Button>
-                                  </ButtonGroup>
+                                  </div>
                                 </div>
                               ) : null}
 
                               {relationRows.length ? (
-                                <div className="px-3 py-3 border-bottom bg-body-tertiary">
-                                  <div className="text-muted small mb-2 fw-semibold">
-                                    Relações include / extend (edição rápida)
-                                  </div>
-                                  <Table bordered size="sm" responsive className="mb-0 bg-white">
-                                    <thead>
-                                      <tr>
-                                        <th>Origem</th>
-                                        <th>Tipo</th>
-                                        <th>Destino</th>
-                                        <th>Ação</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {relationRows.map((row) => (
-                                        <tr key={row.id}>
-                                          <td>{row.source}</td>
-                                          <td>
-                                            <Form.Select
-                                              value={row.type}
-                                              onChange={(e) =>
-                                                updateRelationType(
-                                                  row.id,
-                                                  e.target.value as 'include' | 'extend',
-                                                )
-                                              }
-                                              aria-label={`Tipo da relação ${row.source} → ${row.target}`}
-                                            >
-                                              <option value="include">include</option>
-                                              <option value="extend">extend</option>
-                                            </Form.Select>
-                                          </td>
-                                          <td>{row.target}</td>
-                                          <td>
-                                            <Button
-                                              size="sm"
-                                              variant="outline-danger"
-                                              onClick={() => removeDiagramEdge(row.id)}
-                                            >
-                                              Remover aresta
-                                            </Button>
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </Table>
+                                <div className="diagram-relations-panel">
+                                  <button
+                                    type="button"
+                                    className="diagram-relations-panel__toggle"
+                                    onClick={() => setRelationsPanelOpen((value) => !value)}
+                                    aria-expanded={relationsPanelOpen}
+                                    aria-controls="diagram-relations-panel-body"
+                                  >
+                                    <span
+                                      className={`diagram-relations-panel__chevron${
+                                        relationsPanelOpen
+                                          ? ' diagram-relations-panel__chevron--open'
+                                          : ''
+                                      }`}
+                                      aria-hidden="true"
+                                    />
+                                    <span className="diagram-relations-panel__title">
+                                      Relações include / extend
+                                    </span>
+                                    <Badge bg="secondary" pill className="ms-2">
+                                      {relationRows.length}
+                                    </Badge>
+                                  </button>
+                                  <Collapse in={relationsPanelOpen}>
+                                    <div id="diagram-relations-panel-body">
+                                      <div className="diagram-relations-panel__body">
+                                        <Table
+                                          bordered
+                                          size="sm"
+                                          responsive
+                                          className="mb-0 bg-white"
+                                        >
+                                          <thead>
+                                            <tr>
+                                              <th>Origem</th>
+                                              <th>Tipo</th>
+                                              <th>Destino</th>
+                                              <th>Ação</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {relationRows.map((row) => (
+                                              <tr key={row.id}>
+                                                <td>{row.source}</td>
+                                                <td>
+                                                  <Form.Select
+                                                    value={row.type}
+                                                    onChange={(e) =>
+                                                      updateRelationType(
+                                                        row.id,
+                                                        e.target.value as 'include' | 'extend',
+                                                      )
+                                                    }
+                                                    aria-label={`Tipo da relação ${row.source} → ${row.target}`}
+                                                  >
+                                                    <option value="include">include</option>
+                                                    <option value="extend">extend</option>
+                                                  </Form.Select>
+                                                </td>
+                                                <td>{row.target}</td>
+                                                <td>
+                                                  <Button
+                                                    size="sm"
+                                                    variant="outline-danger"
+                                                    onClick={() => removeDiagramEdge(row.id)}
+                                                  >
+                                                    Remover aresta
+                                                  </Button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </Table>
+                                      </div>
+                                    </div>
+                                  </Collapse>
                                 </div>
                               ) : null}
 
-                              <div className="diagram-canvas diagram-canvas--expanded border-top">
-                                {diagram ? (
-                                  <ReactFlow
-                                    nodes={diagram.nodes}
-                                    edges={diagram.edges}
-                                    onNodesChange={(changes) => {
-                                      syncDiagram((current) => ({
-                                        ...current,
-                                        nodes: applyNodeChanges(
-                                          changes as NodeChange[],
-                                          current.nodes,
-                                        ),
-                                      }));
-                                    }}
-                                    onEdgesChange={(changes) => {
-                                      syncDiagram((current) => ({
-                                        ...current,
-                                        edges: applyEdgeChanges(
-                                          changes as EdgeChange[],
-                                          current.edges,
-                                        ),
-                                      }));
-                                    }}
-                                    onConnect={onConnect}
-                                    elevateEdgesOnSelect
-                                    minZoom={0.12}
-                                    maxZoom={1.85}
-                                    deleteKeyCode={['Backspace', 'Delete']}
-                                    connectionLineStyle={{ strokeWidth: 2 }}
-                                    snapToGrid={diagramSnapToGrid}
-                                    snapGrid={DIAGRAM_SNAP_GRID}
-                                  >
-                                    <DiagramFitView revision={diagramLayoutRevision} />
-                                    <Background
-                                      gap={diagramSnapToGrid ? DIAGRAM_SNAP_GRID[0] : 20}
-                                    />
-                                    <Controls />
-                                    {diagramMiniMap ? (
-                                      <MiniMap
-                                        zoomable
-                                        pannable
-                                        nodeColor={minimapNodeColor}
-                                        maskColor="rgba(15, 23, 42, 0.12)"
-                                        style={{ height: 120, width: 180 }}
-                                      />
-                                    ) : null}
-                                    <Panel
-                                      position="top-right"
-                                      className="diagram-floating-panel m-2"
+                              {diagramViewMode === 'preview' ? (
+                                <div className="diagram-pdf-preview border-top">
+                                  {diagram ? (
+                                    <div
+                                      className="diagram-pdf-preview__page"
+                                      style={diagramPreviewPageStyle}
+                                      aria-live="polite"
                                     >
-                                      <div className="text-muted small text-end bg-white border rounded shadow-sm px-2 py-1">
-                                        Arraste para mover · Delete remove aresta selecionada ·
-                                        Arestas ficam atrás dos nós; selecione uma para destacar
-                                        {diagramSnapToGrid ? (
-                                          <> · Malha {DIAGRAM_SNAP_GRID[0]} px</>
-                                        ) : null}
-                                      </div>
-                                    </Panel>
-                                  </ReactFlow>
-                                ) : (
-                                  <div className="p-3 text-muted">
-                                    Ajuste o PlantUML abaixo até o preview voltar a ser válido.
-                                  </div>
-                                )}
-                              </div>
+                                      {diagramPreviewLoading ? (
+                                        <div className="diagram-pdf-preview__placeholder text-muted">
+                                          Renderizando a prévia final…
+                                        </div>
+                                      ) : null}
+                                      {diagramPreviewUrl ? (
+                                        <img
+                                          src={diagramPreviewUrl}
+                                          alt="Prévia final do diagrama de casos de uso"
+                                        />
+                                      ) : null}
+                                    </div>
+                                  ) : (
+                                    <div className="p-3 text-muted">
+                                      Gere o diagrama novamente para restaurar a prévia final.
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="diagram-canvas diagram-canvas--expanded border-top">
+                                  {diagram ? (
+                                    <ReactFlow
+                                      nodes={editorNodes}
+                                      edges={diagram.edges}
+                                      nodeTypes={diagramNodeTypes}
+                                      edgeTypes={diagramEdgeTypes}
+                                      fitView
+                                      fitViewOptions={{ padding: 0.12, minZoom: 0.52, maxZoom: 1 }}
+                                      onNodesChange={(changes) => {
+                                        const filtered = (changes as NodeChange[]).filter(
+                                          (change) =>
+                                            !('id' in change) ||
+                                            change.id !== EDITOR_SYSTEM_NODE_ID,
+                                        );
+                                        if (!filtered.length) return;
+                                        syncDiagram((current) => ({
+                                          ...current,
+                                          nodes: applyNodeChanges(filtered, current.nodes),
+                                        }));
+                                      }}
+                                      onEdgesChange={(changes) => {
+                                        syncDiagram((current) => ({
+                                          ...current,
+                                          edges: applyEdgeChanges(
+                                            changes as EdgeChange[],
+                                            current.edges,
+                                          ),
+                                        }));
+                                      }}
+                                      onConnect={onConnect}
+                                      elevateEdgesOnSelect
+                                      minZoom={0.1}
+                                      maxZoom={2.2}
+                                      preventScrolling={false}
+                                      zoomOnScroll={false}
+                                      panOnScroll={false}
+                                      deleteKeyCode={['Backspace', 'Delete']}
+                                      connectionLineStyle={{ strokeWidth: 2 }}
+                                      snapToGrid={diagramSnapToGrid}
+                                      snapGrid={DIAGRAM_SNAP_GRID}
+                                    >
+                                      <DiagramFitView revision={diagramLayoutRevision} />
+                                      <Background
+                                        gap={diagramSnapToGrid ? DIAGRAM_SNAP_GRID[0] : 20}
+                                      />
+                                      <Controls />
+                                      {diagramMiniMap ? (
+                                        <MiniMap
+                                          zoomable
+                                          pannable
+                                          nodeColor={minimapNodeColor}
+                                          maskColor="rgba(15, 23, 42, 0.12)"
+                                          style={{ height: 120, width: 180 }}
+                                        />
+                                      ) : null}
+                                    </ReactFlow>
+                                  ) : (
+                                    <div className="p-3 text-muted">
+                                      Gere o diagrama novamente para restaurar o canvas.
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </Card.Body>
                           </Card>
-
-                          <div className="diagram-code-block mb-2">
-                            <Form.Label className="fw-semibold">
-                              PlantUML (código — largura total)
-                            </Form.Label>
-                            <Form.Control
-                              as="textarea"
-                              rows={14}
-                              value={plantuml}
-                              onChange={(e) => handlePlantumlChange(e.target.value)}
-                              spellCheck={false}
-                              className="diagram-plantuml-input font-monospace"
-                              aria-label="Código PlantUML do diagrama"
-                            />
-                            <div className="text-muted small mt-2">
-                              Alterações no canvas ou no PlantUML são{' '}
-                              <strong>gravadas automaticamente</strong> na sessão após cerca de 1 s
-                              (sem mudar o status da etapa). <strong>Salvar código</strong> força
-                              gravação imediata com o mesmo conteúdo. No PDF, o diagrama usa uma
-                              página dedicada em tela cheia. Use <strong>Reorganizar layout</strong>{' '}
-                              para recomputar posições.
-                            </div>
-                          </div>
                         </div>
                       ) : (
                         <Alert variant="secondary">
                           Valide as UCs (Etapa 2) para liberar a geração do diagrama.
                         </Alert>
                       )}
-                    </>
+                    </section>
                   ) : null}
 
                   <UserStoriesStep
