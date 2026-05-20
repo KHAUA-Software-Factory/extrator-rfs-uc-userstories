@@ -12,6 +12,11 @@ export type DiagramImage = {
   height: number;
 };
 
+export type DiagramImageOptions = {
+  maxCanvasPixels?: number;
+  maxCanvasSide?: number;
+};
+
 export type DiagramPdfPageSize = {
   width: number;
   height: number;
@@ -39,6 +44,7 @@ const ASSOCIATION_COLOR = '#94a3b8';
 const PADDING = 56;
 const SYSTEM_PADDING = 36;
 const MAX_CANVAS_SIDE = 8192;
+const MAX_CANVAS_PIXELS = 26_000_000;
 export const DIAGRAM_PDF_PAGE_MARGIN = 18;
 const DIAGRAM_TARGET_SCALE = 0.82;
 const A4_LANDSCAPE = { width: 841.89, height: 595.28 };
@@ -55,9 +61,12 @@ export async function renderUseCaseDiagramSvg(diagram: DiagramModel): Promise<Re
   return buildSvg(diagram);
 }
 
-export async function renderUseCaseDiagramImage(diagram: DiagramModel): Promise<DiagramImage> {
+export async function renderUseCaseDiagramImage(
+  diagram: DiagramModel,
+  options: DiagramImageOptions = {},
+): Promise<DiagramImage> {
   const rendered = await renderUseCaseDiagramSvg(diagram);
-  return svgToPng(rendered);
+  return svgToPng(rendered, options);
 }
 
 export function getUseCaseDiagramPdfPageSize(
@@ -504,13 +513,20 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-async function svgToPng(rendered: RenderedDiagramSvg): Promise<DiagramImage> {
+async function svgToPng(
+  rendered: RenderedDiagramSvg,
+  options: DiagramImageOptions,
+): Promise<DiagramImage> {
   const preferredScale =
     typeof window === 'undefined' ? 2 : Math.min(Math.max(window.devicePixelRatio || 1, 2), 3);
+  const maxCanvasSide = options.maxCanvasSide ?? MAX_CANVAS_SIDE;
+  const maxCanvasPixels = options.maxCanvasPixels ?? MAX_CANVAS_PIXELS;
+  const pixelScale = Math.sqrt(maxCanvasPixels / Math.max(1, rendered.width * rendered.height));
   const rasterScale = Math.min(
     preferredScale,
-    MAX_CANVAS_SIDE / rendered.width,
-    MAX_CANVAS_SIDE / rendered.height,
+    maxCanvasSide / rendered.width,
+    maxCanvasSide / rendered.height,
+    pixelScale,
   );
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(rendered.width * rasterScale));
@@ -524,8 +540,13 @@ async function svgToPng(rendered: RenderedDiagramSvg): Promise<DiagramImage> {
   const image = await loadSvgImage(rendered.svg);
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
+  const dataUrl = canvas.toDataURL('image/png');
+  if (!dataUrl || dataUrl === 'data:,') {
+    throw new Error('canvas_export_failed');
+  }
+
   return {
-    dataUrl: canvas.toDataURL('image/png'),
+    dataUrl,
     width: rendered.width,
     height: rendered.height,
   };

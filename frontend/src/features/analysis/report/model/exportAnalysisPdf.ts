@@ -218,7 +218,10 @@ export async function exportAnalysisPdf(input: ExportAnalysisPdfInput) {
       return;
     }
 
-    const rendered = await renderUseCaseDiagramImage(diagram);
+    const rendered = await renderUseCaseDiagramImage(diagram, {
+      maxCanvasPixels: 14_000_000,
+      maxCanvasSide: 4096,
+    });
     const diagramPage = getUseCaseDiagramPdfPageSize(rendered.width, rendered.height);
     doc.addPage(
       [diagramPage.width, diagramPage.height],
