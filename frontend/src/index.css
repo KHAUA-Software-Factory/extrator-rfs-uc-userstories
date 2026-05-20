@@ -226,6 +226,105 @@ table {
   white-space: nowrap;
 }
 
+.result-table {
+  vertical-align: middle;
+}
+
+.result-table td,
+.result-table th {
+  border-color: var(--border);
+}
+
+.result-table__id {
+  color: var(--text-muted);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.result-table__muted {
+  color: var(--text-muted);
+}
+
+.result-table__long {
+  max-width: 34rem;
+  min-width: 18rem;
+}
+
+.result-item-actions {
+  display: inline-flex;
+  gap: 0.35rem;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.result-icon-button {
+  align-items: center;
+  aspect-ratio: 1;
+  display: inline-flex;
+  justify-content: center;
+  padding: 0;
+  width: 2rem;
+}
+
+.result-icon-button svg {
+  fill: none;
+  height: 1rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 1rem;
+}
+
+.result-relation-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+}
+
+.result-relation-list__item {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.result-chip {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  display: inline-flex;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.25rem 0.45rem;
+  white-space: nowrap;
+}
+
+.result-chip--include {
+  border-color: rgba(220, 38, 38, 0.28);
+  color: #b91c1c;
+}
+
+.result-chip--extend {
+  border-color: rgba(15, 118, 110, 0.32);
+  color: #0f766e;
+}
+
+.result-modal-grid {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.result-modal-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .diagram-stage-fullwidth {
   box-sizing: border-box;
   margin-inline: auto;
@@ -953,6 +1052,10 @@ table {
   .relation-editor .btn {
     flex: 1 1 100%;
     max-width: none !important;
+  }
+
+  .result-modal-grid--two {
+    grid-template-columns: 1fr;
   }
 
   .diagram-stage-fullwidth {

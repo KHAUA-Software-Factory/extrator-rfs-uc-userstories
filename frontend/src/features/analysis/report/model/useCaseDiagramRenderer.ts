@@ -32,6 +32,36 @@ type NodeBox = {
   isUseCase: boolean;
 };
 
+type SystemBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} | null;
+
+type DiagramFrame = {
+  width: number;
+  height: number;
+  boxes: NodeBox[];
+  boxById: Map<string, NodeBox>;
+  systemBounds: SystemBounds;
+  relationLabelsVisible: boolean;
+  hasInclude: boolean;
+  hasExtend: boolean;
+  laneInfo: Map<string, { index: number; count: number }>;
+  associationSourceCounts: Map<string, number>;
+};
+
+type EdgeGeometry = {
+  path: string;
+  labelX: number;
+  labelY: number;
+  endX: number;
+  endY: number;
+  endControlX: number;
+  endControlY: number;
+};
+
 const ACTOR_WIDTH = 132;
 const ACTOR_HEIGHT = 112;
 const USE_CASE_WIDTH = 248;
@@ -65,8 +95,7 @@ export async function renderUseCaseDiagramImage(
   diagram: DiagramModel,
   options: DiagramImageOptions = {},
 ): Promise<DiagramImage> {
-  const rendered = await renderUseCaseDiagramSvg(diagram);
-  return svgToPng(rendered, options);
+  return diagramToPng(diagram, options);
 }
 
 export function getUseCaseDiagramPdfPageSize(
@@ -88,29 +117,24 @@ export function getUseCaseDiagramPdfPageSize(
 }
 
 function buildSvg(diagram: DiagramModel): RenderedDiagramSvg {
-  const modelWithPositions = ensurePositions(diagram);
-  const boxes = buildNodeBoxes(modelWithPositions);
-  if (!boxes.length) {
+  const frame = buildDiagramFrame(diagram);
+  const {
+    width,
+    height,
+    boxes: shifted,
+    boxById,
+    systemBounds,
+    relationLabelsVisible,
+    hasInclude,
+    hasExtend,
+    laneInfo,
+    associationSourceCounts,
+  } = frame;
+
+  if (!shifted.length) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 360" width="600" height="360"><rect width="600" height="360" fill="#ffffff"/></svg>`;
     return { svg, width: 600, height: 360 };
   }
-
-  const minX = Math.min(...boxes.map((b) => b.x));
-  const minY = Math.min(...boxes.map((b) => b.y));
-  const maxX = Math.max(...boxes.map((b) => b.x + b.width));
-  const maxY = Math.max(...boxes.map((b) => b.y + b.height));
-  const offsetX = PADDING - minX;
-  const offsetY = PADDING - minY;
-  const width = maxX - minX + PADDING * 2;
-  const height = maxY - minY + PADDING * 2;
-  const shifted = boxes.map((box) => ({ ...box, x: box.x + offsetX, y: box.y + offsetY }));
-  const boxById = new Map(shifted.map((box) => [box.id, box]));
-  const systemBounds = getSystemBounds(shifted.filter((box) => box.isUseCase));
-  const relationEdges = diagram.edges.filter((edge) => getRelationType(edge) !== 'association');
-  const relationLabelsVisible = relationEdges.length > 0;
-  const hasInclude = relationEdges.some((edge) => getRelationType(edge) === 'include');
-  const hasExtend = relationEdges.some((edge) => getRelationType(edge) === 'extend');
-  const associationSourceCounts = getAssociationSourceCounts(diagram.edges);
 
   const parts: string[] = [];
   parts.push(
@@ -127,8 +151,6 @@ function buildSvg(diagram: DiagramModel): RenderedDiagramSvg {
       `<text x="${systemBounds.x + 18}" y="${systemBounds.y + 26}" fill="#475569" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700">${escapeXml(diagram.systemName || 'Sistema')}</text>`,
     );
   }
-
-  const laneInfo = computeEdgeLanes(diagram.edges);
 
   diagram.edges.forEach((edge) => {
     const source = boxById.get(String(edge.source));
@@ -168,7 +190,7 @@ function buildSvg(diagram: DiagramModel): RenderedDiagramSvg {
     }
   });
 
-  if (!relationLabelsVisible && relationEdges.length > 0) {
+  if (!relationLabelsVisible && (hasInclude || hasExtend)) {
     parts.push(legendMarkup(width, hasInclude, hasExtend));
   }
 
@@ -182,6 +204,55 @@ function buildSvg(diagram: DiagramModel): RenderedDiagramSvg {
 
   parts.push('</svg>');
   return { svg: parts.join(''), width, height };
+}
+
+function buildDiagramFrame(diagram: DiagramModel): DiagramFrame {
+  const modelWithPositions = ensurePositions(diagram);
+  const boxes = buildNodeBoxes(modelWithPositions);
+  if (!boxes.length) {
+    return {
+      width: 600,
+      height: 360,
+      boxes: [],
+      boxById: new Map(),
+      systemBounds: null,
+      relationLabelsVisible: false,
+      hasInclude: false,
+      hasExtend: false,
+      laneInfo: new Map(),
+      associationSourceCounts: new Map(),
+    };
+  }
+
+  const minX = Math.min(...boxes.map((b) => b.x));
+  const minY = Math.min(...boxes.map((b) => b.y));
+  const maxX = Math.max(...boxes.map((b) => b.x + b.width));
+  const maxY = Math.max(...boxes.map((b) => b.y + b.height));
+  const offsetX = PADDING - minX;
+  const offsetY = PADDING - minY;
+  const width = maxX - minX + PADDING * 2;
+  const height = maxY - minY + PADDING * 2;
+  const shifted = boxes.map((box) => ({ ...box, x: box.x + offsetX, y: box.y + offsetY }));
+  const boxById = new Map(shifted.map((box) => [box.id, box]));
+  const systemBounds = getSystemBounds(shifted.filter((box) => box.isUseCase));
+  const relationEdges = diagram.edges.filter((edge) => getRelationType(edge) !== 'association');
+  const relationLabelsVisible = relationEdges.length > 0;
+  const hasInclude = relationEdges.some((edge) => getRelationType(edge) === 'include');
+  const hasExtend = relationEdges.some((edge) => getRelationType(edge) === 'extend');
+  const associationSourceCounts = getAssociationSourceCounts(diagram.edges);
+  const laneInfo = computeEdgeLanes(diagram.edges);
+  return {
+    width,
+    height,
+    boxes: shifted,
+    boxById,
+    systemBounds,
+    relationLabelsVisible,
+    hasInclude,
+    hasExtend,
+    laneInfo,
+    associationSourceCounts,
+  };
 }
 
 function ensurePositions(model: DiagramModel): DiagramModel {
@@ -314,6 +385,10 @@ function buildCurveGeometry(
       path: `M ${sx} ${sy} L ${tx} ${ty}`,
       labelX: sx,
       labelY: sy,
+      endX: tx,
+      endY: ty,
+      endControlX: sx,
+      endControlY: sy,
     };
   }
 
@@ -331,6 +406,10 @@ function buildCurveGeometry(
     path: `M ${sx} ${sy} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${tx} ${ty}`,
     labelX: (sx + tx) / 2 + perpX * lateral * 0.7,
     labelY: (sy + ty) / 2 + perpY * lateral * 0.7,
+    endX: tx,
+    endY: ty,
+    endControlX: c2x,
+    endControlY: c2y,
   };
 }
 
@@ -356,6 +435,10 @@ function buildBundledAssociationGeometry(source: NodeBox, target: NodeBox) {
     ].join(' '),
     labelX: trunkX,
     labelY: midY,
+    endX: tx,
+    endY: ty,
+    endControlX: tx - direction * turn,
+    endControlY: ty,
   };
 }
 
@@ -513,32 +596,27 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-async function svgToPng(
-  rendered: RenderedDiagramSvg,
-  options: DiagramImageOptions,
-): Promise<DiagramImage> {
+function diagramToPng(diagram: DiagramModel, options: DiagramImageOptions): DiagramImage {
+  const frame = buildDiagramFrame(diagram);
   const preferredScale =
     typeof window === 'undefined' ? 2 : Math.min(Math.max(window.devicePixelRatio || 1, 2), 3);
   const maxCanvasSide = options.maxCanvasSide ?? MAX_CANVAS_SIDE;
   const maxCanvasPixels = options.maxCanvasPixels ?? MAX_CANVAS_PIXELS;
-  const pixelScale = Math.sqrt(maxCanvasPixels / Math.max(1, rendered.width * rendered.height));
+  const pixelScale = Math.sqrt(maxCanvasPixels / Math.max(1, frame.width * frame.height));
   const rasterScale = Math.min(
     preferredScale,
-    maxCanvasSide / rendered.width,
-    maxCanvasSide / rendered.height,
+    maxCanvasSide / frame.width,
+    maxCanvasSide / frame.height,
     pixelScale,
   );
   const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(rendered.width * rasterScale));
-  canvas.height = Math.max(1, Math.round(rendered.height * rasterScale));
+  canvas.width = Math.max(1, Math.round(frame.width * rasterScale));
+  canvas.height = Math.max(1, Math.round(frame.height * rasterScale));
   const context = canvas.getContext('2d');
   if (!context) throw new Error('canvas_unavailable');
 
-  context.fillStyle = '#ffffff';
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
-  const image = await loadSvgImage(rendered.svg);
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  context.scale(rasterScale, rasterScale);
+  drawDiagramFrame(context, frame, diagram);
 
   const dataUrl = canvas.toDataURL('image/png');
   if (!dataUrl || dataUrl === 'data:,') {
@@ -547,24 +625,296 @@ async function svgToPng(
 
   return {
     dataUrl,
-    width: rendered.width,
-    height: rendered.height,
+    width: frame.width,
+    height: frame.height,
   };
 }
 
-function loadSvgImage(svg: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const image = new Image();
-    image.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('svg_render_failed'));
-    };
-    image.src = url;
+function drawDiagramFrame(
+  context: CanvasRenderingContext2D,
+  frame: DiagramFrame,
+  diagram: DiagramModel,
+) {
+  context.save();
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, frame.width, frame.height);
+
+  if (frame.systemBounds) {
+    context.fillStyle = '#f8fafc';
+    context.strokeStyle = '#cbd5e1';
+    context.lineWidth = 1.5;
+    drawRoundRect(
+      context,
+      frame.systemBounds.x,
+      frame.systemBounds.y,
+      frame.systemBounds.width,
+      frame.systemBounds.height,
+      14,
+    );
+    context.fill();
+    context.stroke();
+
+    context.fillStyle = '#475569';
+    context.font = '700 14px Helvetica, Arial, sans-serif';
+    context.textAlign = 'left';
+    context.textBaseline = 'alphabetic';
+    context.fillText(diagram.systemName || 'Sistema', frame.systemBounds.x + 18, frame.systemBounds.y + 26);
+  }
+
+  diagram.edges.forEach((edge) => {
+    const source = frame.boxById.get(String(edge.source));
+    const target = frame.boxById.get(String(edge.target));
+    if (!source || !target) return;
+    const relationType = getRelationType(edge);
+    const lane = frame.laneInfo.get(String(edge.id)) || { index: 0, count: 1 };
+    const bundledAssociation =
+      relationType === 'association' &&
+      (frame.associationSourceCounts.get(getAssociationActorId(edge)) || 0) >= 4 &&
+      source.isUseCase !== target.isUseCase;
+    const geometry = bundledAssociation
+      ? buildBundledAssociationGeometry(source, target)
+      : buildCurveGeometry(source, target, lane.index, lane.count, relationType);
+    const stroke =
+      relationType === 'include'
+        ? INCLUDE_EDGE_COLOR
+        : relationType === 'extend'
+          ? EXTEND_EDGE_COLOR
+          : ASSOCIATION_COLOR;
+    const opacity = relationType === 'association' ? (bundledAssociation ? 0.16 : 0.34) : 0.98;
+
+    if (relationType !== 'association') {
+      strokePath(context, geometry.path, '#ffffff', 7, 0.9, []);
+    }
+    strokePath(
+      context,
+      geometry.path,
+      stroke,
+      relationType === 'association' ? 1.1 : 2.6,
+      opacity,
+      relationType === 'association' ? [] : [6, 5],
+    );
+    if (relationType !== 'association') {
+      drawArrowhead(context, geometry, stroke);
+      if (frame.relationLabelsVisible) {
+        const labelColor = relationType === 'include' ? INCLUDE_LABEL_COLOR : EXTEND_LABEL_COLOR;
+        drawEdgeLabel(context, geometry.labelX, geometry.labelY, `<<${relationType}>>`, labelColor);
+      }
+    }
   });
+
+  if (!frame.relationLabelsVisible && (frame.hasInclude || frame.hasExtend)) {
+    drawLegend(context, frame.width, frame.hasInclude, frame.hasExtend);
+  }
+
+  frame.boxes.forEach((box) => {
+    if (box.isUseCase) {
+      drawUseCase(context, box);
+    } else {
+      drawActor(context, box);
+    }
+  });
+
+  context.restore();
+}
+
+function strokePath(
+  context: CanvasRenderingContext2D,
+  pathValue: string,
+  color: string,
+  width: number,
+  opacity: number,
+  dash: number[],
+) {
+  context.save();
+  context.strokeStyle = color;
+  context.globalAlpha = opacity;
+  context.lineWidth = width;
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  context.setLineDash(dash);
+  context.stroke(new Path2D(pathValue));
+  context.restore();
+}
+
+function drawArrowhead(
+  context: CanvasRenderingContext2D,
+  geometry: EdgeGeometry,
+  color: string,
+) {
+  const angle = Math.atan2(geometry.endY - geometry.endControlY, geometry.endX - geometry.endControlX);
+  const size = 11;
+  context.save();
+  context.fillStyle = color;
+  context.globalAlpha = 0.98;
+  context.beginPath();
+  context.moveTo(geometry.endX, geometry.endY);
+  context.lineTo(
+    geometry.endX - size * Math.cos(angle - Math.PI / 6),
+    geometry.endY - size * Math.sin(angle - Math.PI / 6),
+  );
+  context.lineTo(
+    geometry.endX - size * Math.cos(angle + Math.PI / 6),
+    geometry.endY - size * Math.sin(angle + Math.PI / 6),
+  );
+  context.closePath();
+  context.fill();
+  context.restore();
+}
+
+function drawUseCase(context: CanvasRenderingContext2D, box: NodeBox) {
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const lines = wrapLabel(box.label, 30);
+  const startY = cy - (lines.length - 1) * 8;
+
+  context.save();
+  context.fillStyle = '#ffffff';
+  context.strokeStyle = '#2563eb';
+  context.lineWidth = 2;
+  context.beginPath();
+  context.ellipse(cx, cy, box.width / 2, box.height / 2, 0, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+
+  context.fillStyle = '#172033';
+  context.font = '650 13px Helvetica, Arial, sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  lines.forEach((line, index) => {
+    context.fillText(line, cx, startY + index * 16);
+  });
+  context.restore();
+}
+
+function drawActor(context: CanvasRenderingContext2D, box: NodeBox) {
+  const cx = box.x + box.width / 2;
+  const headY = box.y + 16;
+  const bodyTop = box.y + 29;
+  const bodyBottom = box.y + 58;
+  const armY = box.y + 42;
+  const footY = box.y + 84;
+  const labelY = box.y + box.height - 18;
+  const lines = wrapLabel(box.label, 22).slice(0, 2);
+
+  context.save();
+  context.strokeStyle = '#334155';
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  context.lineWidth = 3;
+  context.fillStyle = '#ffffff';
+  context.beginPath();
+  context.arc(cx, headY, 10, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+
+  context.lineWidth = 4;
+  context.beginPath();
+  context.moveTo(cx, bodyTop);
+  context.lineTo(cx, bodyBottom);
+  context.moveTo(cx - 22, armY);
+  context.lineTo(cx + 22, armY);
+  context.moveTo(cx, bodyBottom);
+  context.lineTo(cx - 18, footY);
+  context.moveTo(cx, bodyBottom);
+  context.lineTo(cx + 18, footY);
+  context.stroke();
+
+  context.fillStyle = '#172033';
+  context.font = '700 11px Helvetica, Arial, sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'alphabetic';
+  lines.forEach((line, index) => {
+    context.fillText(line, cx, labelY + index * 13);
+  });
+  context.restore();
+}
+
+function drawEdgeLabel(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  text: string,
+  color: string,
+) {
+  const labelWidth = Math.max(48, text.length * 7);
+  context.save();
+  context.fillStyle = '#ffffff';
+  context.strokeStyle = color;
+  context.globalAlpha = 1;
+  drawRoundRect(context, x - labelWidth / 2, y - 12, labelWidth, 20, 10);
+  context.fill();
+  context.globalAlpha = 0.4;
+  context.stroke();
+  context.globalAlpha = 1;
+  context.fillStyle = color;
+  context.font = '700 11px Helvetica, Arial, sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(text, x, y - 1);
+  context.restore();
+}
+
+function drawLegend(context: CanvasRenderingContext2D, width: number, hasInclude: boolean, hasExtend: boolean) {
+  const entries = [
+    hasInclude ? { color: INCLUDE_EDGE_COLOR, text: 'include' } : null,
+    hasExtend ? { color: EXTEND_EDGE_COLOR, text: 'extend' } : null,
+  ].filter(Boolean) as Array<{ color: string; text: string }>;
+  if (!entries.length) return;
+
+  const legendWidth = 152;
+  const legendHeight = 22 + entries.length * 18;
+  const x = Math.max(24, width - legendWidth - 24);
+  const y = 18;
+
+  context.save();
+  context.fillStyle = '#ffffff';
+  context.strokeStyle = '#cbd5e1';
+  context.lineWidth = 1;
+  drawRoundRect(context, x, y, legendWidth, legendHeight, 8);
+  context.fill();
+  context.stroke();
+
+  context.fillStyle = '#64748b';
+  context.font = '700 10px Helvetica, Arial, sans-serif';
+  context.textAlign = 'left';
+  context.textBaseline = 'alphabetic';
+  context.fillText('Legenda', x + 12, y + 17);
+
+  entries.forEach((entry, index) => {
+    const rowY = y + 28 + index * 18;
+    context.strokeStyle = entry.color;
+    context.lineWidth = 2;
+    context.setLineDash([6, 5]);
+    context.beginPath();
+    context.moveTo(x + 12, rowY - 4);
+    context.lineTo(x + 44, rowY - 4);
+    context.stroke();
+    context.setLineDash([]);
+    context.fillStyle = '#475569';
+    context.font = '700 11px Helvetica, Arial, sans-serif';
+    context.fillText(`<<${entry.text}>>`, x + 52, rowY);
+  });
+  context.restore();
+}
+
+function drawRoundRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  const r = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + r, y);
+  context.lineTo(x + width - r, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + r);
+  context.lineTo(x + width, y + height - r);
+  context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  context.lineTo(x + r, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - r);
+  context.lineTo(x, y + r);
+  context.quadraticCurveTo(x, y, x + r, y);
+  context.closePath();
 }

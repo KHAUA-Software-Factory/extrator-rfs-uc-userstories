@@ -1,10 +1,15 @@
 import type { UseCase, UseCaseRelation } from '../../model/types';
 
+import { useState } from 'react';
+
 import Alert from 'react-bootstrap/Alert';
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
+import Modal from 'react-bootstrap/Modal';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
+
+import { ResultItemActions } from '../../shared/ui/ResultItemActions';
 
 type Props = {
   phase: number;
@@ -35,10 +40,78 @@ export function UseCasesStep(props: Props) {
     onRemoveUseCase,
   } = props;
 
-  if (phase !== 2) return null;
-
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [draftUseCase, setDraftUseCase] = useState<UseCase | null>(null);
   const canGenerate = requirementsCount > 0 && statusText === 'requirements_validated';
   const hasUseCases = useCases.length > 0;
+  const draftTargetOptions =
+    editingIndex === null ? [] : useCases.filter((_, candidateIdx) => candidateIdx !== editingIndex);
+
+  if (phase !== 2) return null;
+
+  function startEditUseCase(index: number) {
+    setEditingIndex(index);
+    setDraftUseCase({ ...useCases[index], relacoes: [...(useCases[index].relacoes || [])] });
+  }
+
+  function closeEditUseCase() {
+    setEditingIndex(null);
+    setDraftUseCase(null);
+  }
+
+  function saveUseCase() {
+    if (editingIndex === null || !draftUseCase) return;
+    const next = [...useCases];
+    next[editingIndex] = draftUseCase;
+    onChangeUseCases(next);
+    closeEditUseCase();
+  }
+
+  function removeUseCase(index: number) {
+    if (editingIndex === index) closeEditUseCase();
+    onRemoveUseCase(index);
+  }
+
+  function updateDraftUseCase(patch: Partial<UseCase>) {
+    if (!draftUseCase) return;
+    setDraftUseCase({ ...draftUseCase, ...patch });
+  }
+
+  function updateDraftRelation(relationIndex: number, patch: Partial<UseCaseRelation>) {
+    if (!draftUseCase) return;
+    updateDraftUseCase({
+      relacoes: (draftUseCase.relacoes || []).map((relacao, currentIdx) =>
+        currentIdx === relationIndex ? { ...relacao, ...patch } : relacao,
+      ),
+    });
+  }
+
+  function addDraftRelation() {
+    if (!draftUseCase) return;
+    updateDraftUseCase({
+      relacoes: [
+        ...(draftUseCase.relacoes || []),
+        {
+          tipo: 'include',
+          destino: draftTargetOptions[0]?.id || '',
+          condicao: '',
+        },
+      ],
+    });
+  }
+
+  function removeDraftRelation(relationIndex: number) {
+    if (!draftUseCase) return;
+    updateDraftUseCase({
+      relacoes: (draftUseCase.relacoes || []).filter((_, currentIdx) => currentIdx !== relationIndex),
+    });
+  }
+
+  function formatUseCaseLabel(id: string) {
+    const useCase = useCases.find((candidate) => candidate.id === id);
+    if (!useCase) return id || '-';
+    return `${useCase.id || '-'}${useCase.nome ? ` - ${useCase.nome}` : ''}`;
+  }
 
   return (
     <>
@@ -65,7 +138,7 @@ export function UseCasesStep(props: Props) {
       </Stack>
 
       {useCases.length ? (
-        <Table bordered size="sm" responsive>
+        <Table bordered size="sm" responsive className="result-table">
           <thead>
             <tr>
               <th>ID</th>
@@ -79,152 +152,42 @@ export function UseCasesStep(props: Props) {
           <tbody>
             {useCases.map((uc, idx) => {
               const relacoes = uc.relacoes || [];
-              const targetOptions = useCases.filter((_, candidateIdx) => candidateIdx !== idx);
-
-              function updateUseCase(patch: Partial<UseCase>) {
-                const next = [...useCases];
-                next[idx] = { ...next[idx], relacoes, ...patch };
-                onChangeUseCases(next);
-              }
-
-              function updateRelation(relationIdx: number, patch: Partial<UseCaseRelation>) {
-                updateUseCase({
-                  relacoes: relacoes.map((relacao, currentIdx) =>
-                    currentIdx === relationIdx ? { ...relacao, ...patch } : relacao,
-                  ),
-                });
-              }
-
-              function addRelation() {
-                updateUseCase({
-                  relacoes: [
-                    ...relacoes,
-                    {
-                      tipo: 'include',
-                      destino: targetOptions[0]?.id || '',
-                      condicao: '',
-                    },
-                  ],
-                });
-              }
-
-              function removeRelation(relationIdx: number) {
-                updateUseCase({
-                  relacoes: relacoes.filter((_, currentIdx) => currentIdx !== relationIdx),
-                });
-              }
 
               return (
                 <tr key={uc.id || idx}>
-                  <td className="text-muted">
-                    <Form.Control
-                      value={uc.id}
-                      onChange={(e) => {
-                        const next = [...useCases];
-                        next[idx] = { ...next[idx], id: e.target.value };
-                        onChangeUseCases(next);
-                      }}
-                    />
-                  </td>
+                  <td className="result-table__id">{uc.id || '-'}</td>
+                  <td>{uc.nome || '-'}</td>
+                  <td>{uc.ator_principal || '-'}</td>
+                  <td className="result-table__long">{uc.objetivo || '-'}</td>
                   <td>
-                    <Form.Control
-                      value={uc.nome}
-                      onChange={(e) => {
-                        const next = [...useCases];
-                        next[idx] = { ...next[idx], nome: e.target.value };
-                        onChangeUseCases(next);
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <Form.Control
-                      value={uc.ator_principal}
-                      onChange={(e) => {
-                        const next = [...useCases];
-                        next[idx] = { ...next[idx], ator_principal: e.target.value };
-                        onChangeUseCases(next);
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <Form.Control
-                      value={uc.objetivo}
-                      onChange={(e) => {
-                        const next = [...useCases];
-                        next[idx] = { ...next[idx], objetivo: e.target.value };
-                        onChangeUseCases(next);
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <Stack gap={2}>
-                      {relacoes.length ? (
-                        relacoes.map((relacao, relationIdx) => (
+                    {relacoes.length ? (
+                      <div className="result-relation-list">
+                        {relacoes.map((relacao, relationIdx) => (
                           <div
-                            className="relation-editor d-flex gap-2 align-items-center"
+                            className="result-relation-list__item"
                             key={`${uc.id || idx}:rel:${relationIdx}`}
                           >
-                            <Form.Select
-                              size="sm"
-                              style={{ maxWidth: 110 }}
-                              value={relacao.tipo}
-                              onChange={(e) =>
-                                updateRelation(relationIdx, {
-                                  tipo: e.target.value as UseCaseRelation['tipo'],
-                                })
-                              }
-                            >
-                              <option value="include">include</option>
-                              <option value="extend">extend</option>
-                            </Form.Select>
-                            <Form.Select
-                              size="sm"
-                              value={relacao.destino}
-                              onChange={(e) =>
-                                updateRelation(relationIdx, { destino: e.target.value })
-                              }
-                            >
-                              <option value="">UC destino</option>
-                              {targetOptions.map((target) => (
-                                <option value={target.id} key={target.id || target.nome}>
-                                  {target.id || target.nome}
-                                </option>
-                              ))}
-                            </Form.Select>
-                            <Form.Control
-                              size="sm"
-                              placeholder="Condição"
-                              value={relacao.condicao}
-                              onChange={(e) =>
-                                updateRelation(relationIdx, { condicao: e.target.value })
-                              }
-                            />
-                            <Button
-                              size="sm"
-                              variant="outline-danger"
-                              onClick={() => removeRelation(relationIdx)}
-                            >
-                              Remover
-                            </Button>
+                            <span
+                              className={`result-chip result-chip--${relacao.tipo}`}
+                            >{`<<${relacao.tipo}>>`}</span>
+                            <span>{formatUseCaseLabel(relacao.destino)}</span>
+                            {relacao.condicao ? (
+                              <span className="result-table__muted">({relacao.condicao})</span>
+                            ) : null}
                           </div>
-                        ))
-                      ) : (
-                        <span className="text-muted small">Sem relações</span>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline-secondary"
-                        onClick={addRelation}
-                        disabled={!targetOptions.length}
-                      >
-                        Adicionar relação
-                      </Button>
-                    </Stack>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="result-table__muted">Sem relações</span>
+                    )}
                   </td>
-                  <td>
-                    <Button size="sm" variant="outline-danger" onClick={() => onRemoveUseCase(idx)}>
-                      Remover
-                    </Button>
+                  <td className="text-end">
+                    <ResultItemActions
+                      editLabel={`Editar caso de uso ${uc.id || idx + 1}`}
+                      deleteLabel={`Excluir caso de uso ${uc.id || idx + 1}`}
+                      onEdit={() => startEditUseCase(idx)}
+                      onDelete={() => removeUseCase(idx)}
+                    />
                   </td>
                 </tr>
               );
@@ -236,6 +199,131 @@ export function UseCasesStep(props: Props) {
           Valide os requisitos (Etapa 1) para liberar a geração da lista de UCs.
         </Alert>
       )}
+
+      <Modal show={Boolean(draftUseCase)} onHide={closeEditUseCase} size="lg" centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Editar caso de uso</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {draftUseCase ? (
+            <Form>
+              <div className="result-modal-grid result-modal-grid--two">
+                <Form.Group>
+                  <Form.Label>ID</Form.Label>
+                  <Form.Control
+                    value={draftUseCase.id}
+                    onChange={(e) => updateDraftUseCase({ id: e.target.value })}
+                  />
+                </Form.Group>
+                <Form.Group>
+                  <Form.Label>Ator principal</Form.Label>
+                  <Form.Control
+                    value={draftUseCase.ator_principal}
+                    onChange={(e) => updateDraftUseCase({ ator_principal: e.target.value })}
+                  />
+                </Form.Group>
+              </div>
+              <Form.Group className="mt-3">
+                <Form.Label>Nome</Form.Label>
+                <Form.Control
+                  value={draftUseCase.nome}
+                  onChange={(e) => updateDraftUseCase({ nome: e.target.value })}
+                />
+              </Form.Group>
+              <Form.Group className="mt-3">
+                <Form.Label>Objetivo</Form.Label>
+                <Form.Control
+                  as="textarea"
+                  rows={3}
+                  value={draftUseCase.objetivo}
+                  onChange={(e) => updateDraftUseCase({ objetivo: e.target.value })}
+                />
+              </Form.Group>
+              <div className="mt-3">
+                <div className="d-flex align-items-center justify-content-between gap-2 mb-2">
+                  <Form.Label className="mb-0">Include / Extend</Form.Label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline-secondary"
+                    onClick={addDraftRelation}
+                    disabled={!draftTargetOptions.length}
+                  >
+                    Adicionar relação
+                  </Button>
+                </div>
+                <Stack gap={2}>
+                  {(draftUseCase.relacoes || []).length ? (
+                    (draftUseCase.relacoes || []).map((relacao, relationIdx) => (
+                      <div
+                        className="relation-editor d-flex gap-2 align-items-center"
+                        key={`draft-rel:${relationIdx}`}
+                      >
+                        <Form.Select
+                          size="sm"
+                          style={{ maxWidth: 110 }}
+                          value={relacao.tipo}
+                          onChange={(e) =>
+                            updateDraftRelation(relationIdx, {
+                              tipo: e.target.value as UseCaseRelation['tipo'],
+                            })
+                          }
+                        >
+                          <option value="include">include</option>
+                          <option value="extend">extend</option>
+                        </Form.Select>
+                        <Form.Select
+                          size="sm"
+                          value={relacao.destino}
+                          onChange={(e) =>
+                            updateDraftRelation(relationIdx, { destino: e.target.value })
+                          }
+                        >
+                          <option value="">UC destino</option>
+                          {draftTargetOptions.map((target) => (
+                            <option value={target.id} key={target.id || target.nome}>
+                              {target.id || target.nome}
+                            </option>
+                          ))}
+                        </Form.Select>
+                        <Form.Control
+                          size="sm"
+                          placeholder="Condição"
+                          value={relacao.condicao}
+                          onChange={(e) =>
+                            updateDraftRelation(relationIdx, { condicao: e.target.value })
+                          }
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline-danger"
+                          className="result-icon-button"
+                          onClick={() => removeDraftRelation(relationIdx)}
+                          aria-label="Excluir relação"
+                          title="Excluir relação"
+                        >
+                          x
+                        </Button>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="result-table__muted small">Sem relações</span>
+                  )}
+                </Stack>
+              </div>
+            </Form>
+          ) : null}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="outline-secondary" onClick={closeEditUseCase}>
+            Cancelar
+          </Button>
+          <Button variant="primary" onClick={saveUseCase}>
+            Salvar
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </>
   );
 }

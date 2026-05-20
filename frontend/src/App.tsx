@@ -94,7 +94,7 @@ import { AnalysisReport } from './features/analysis/report/ui/AnalysisReport';
 import { exportAnalysisPdf } from './features/analysis/report/model/exportAnalysisPdf';
 import {
   getUseCaseDiagramPdfPageSize,
-  renderUseCaseDiagramSvg,
+  renderUseCaseDiagramImage,
   type DiagramPdfPageSize,
 } from './features/analysis/report/model/useCaseDiagramRenderer';
 import type { AiProjectScope } from './features/analysis/prompts';
@@ -852,7 +852,6 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    let objectUrl = '';
 
     setDiagramPreviewUrl('');
     setDiagramPreviewPage(null);
@@ -862,17 +861,13 @@ function App() {
     }
 
     setDiagramPreviewLoading(true);
-    renderUseCaseDiagramSvg(diagram)
+    renderUseCaseDiagramImage(diagram, {
+      maxCanvasPixels: 14_000_000,
+      maxCanvasSide: 4096,
+    })
       .then((rendered) => {
-        const nextUrl = URL.createObjectURL(
-          new Blob([rendered.svg], { type: 'image/svg+xml;charset=utf-8' }),
-        );
-        if (cancelled) {
-          URL.revokeObjectURL(nextUrl);
-          return;
-        }
-        objectUrl = nextUrl;
-        setDiagramPreviewUrl(nextUrl);
+        if (cancelled) return;
+        setDiagramPreviewUrl(rendered.dataUrl);
         setDiagramPreviewPage(getUseCaseDiagramPdfPageSize(rendered.width, rendered.height));
       })
       .catch((e) => {
@@ -884,7 +879,6 @@ function App() {
 
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [diagram]);
 
@@ -1365,6 +1359,22 @@ function App() {
     );
   }
 
+  function handleChangeUserStories(next: UserStory[]) {
+    setUserStories(next);
+    if (!activeSession) return;
+
+    const userStoriesText = JSON.stringify(next);
+    setActiveSession({
+      ...activeSession,
+      userStoriesText,
+      statusText: 'user_stories_generated',
+    });
+  }
+
+  function handleRemoveUserStory(index: number) {
+    handleChangeUserStories(userStories.filter((_, idx) => idx !== index));
+  }
+
   async function handleExtractRequirements() {
     const session = activeSession;
     if (!session) return;
@@ -1799,9 +1809,13 @@ function App() {
     setError('');
     showProcessing('Finalizando extração', 'Marcando a análise como finalizada.', 1, 2);
     try {
-      await updateSession(session.uid, session.id, { statusText: 'extraction_finished' });
+      const userStoriesText = JSON.stringify(userStories);
+      await updateSession(session.uid, session.id, {
+        userStoriesText,
+        statusText: 'extraction_finished',
+      });
       if (!isCurrentSession(session)) return;
-      setActiveSession({ ...session, statusText: 'extraction_finished' });
+      setActiveSession({ ...session, userStoriesText, statusText: 'extraction_finished' });
       showProcessing('Finalizando extração', 'Atualizando lista de análises.', 2, 2);
       await refreshSessionsList();
     } catch (e) {
@@ -2641,6 +2655,11 @@ function App() {
                                           alt="Prévia final do diagrama de casos de uso"
                                         />
                                       ) : null}
+                                      {!diagramPreviewLoading && !diagramPreviewUrl ? (
+                                        <div className="diagram-pdf-preview__placeholder text-muted">
+                                          Não foi possível renderizar a prévia final.
+                                        </div>
+                                      ) : null}
                                     </div>
                                   ) : (
                                     <div className="p-3 text-muted">
@@ -2734,6 +2753,8 @@ function App() {
                     onGenerate={handleGenerateUserStories}
                     onExportPdf={handleExportPdf}
                     onFinishExtraction={handleFinishExtraction}
+                    onChangeUserStories={handleChangeUserStories}
+                    onRemoveUserStory={handleRemoveUserStory}
                   />
 
                   <AnalysisReport

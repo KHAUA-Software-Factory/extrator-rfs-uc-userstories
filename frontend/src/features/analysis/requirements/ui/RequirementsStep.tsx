@@ -1,12 +1,17 @@
 import type { FunctionalRequirement } from '../../model/types';
 
+import { useState } from 'react';
+
 import Alert from 'react-bootstrap/Alert';
 import Button from 'react-bootstrap/Button';
 import Col from 'react-bootstrap/Col';
 import Form from 'react-bootstrap/Form';
+import Modal from 'react-bootstrap/Modal';
 import Row from 'react-bootstrap/Row';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
+
+import { ResultItemActions } from '../../shared/ui/ResultItemActions';
 
 type Props = {
   phase: number;
@@ -39,10 +44,35 @@ export function RequirementsStep(props: Props) {
     onRemoveRequirement,
   } = props;
 
-  if (phase !== 1) return null;
-
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [draftRequirement, setDraftRequirement] = useState<FunctionalRequirement | null>(null);
   const hasDescription = Boolean(descriptionText.trim());
   const hasRequirements = requirements.length > 0;
+
+  if (phase !== 1) return null;
+
+  function startEditRequirement(index: number) {
+    setEditingIndex(index);
+    setDraftRequirement({ ...requirements[index] });
+  }
+
+  function closeEditRequirement() {
+    setEditingIndex(null);
+    setDraftRequirement(null);
+  }
+
+  function saveRequirement() {
+    if (editingIndex === null || !draftRequirement) return;
+    const next = [...requirements];
+    next[editingIndex] = draftRequirement;
+    onChangeRequirements(next);
+    closeEditRequirement();
+  }
+
+  function removeRequirement(index: number) {
+    if (editingIndex === index) closeEditRequirement();
+    onRemoveRequirement(index);
+  }
 
   return (
     <>
@@ -89,12 +119,12 @@ export function RequirementsStep(props: Props) {
 
       <div className="mt-3">
         {requirements.length ? (
-          <Table bordered size="sm" responsive>
+          <Table bordered size="sm" responsive className="result-table">
             <thead>
               <tr>
                 <th>ID</th>
                 <th>Ator</th>
-                <th>Ação</th>
+                <th>Ação do requisito</th>
                 <th>Objeto</th>
                 <th>Prioridade</th>
                 <th>Descrição</th>
@@ -105,91 +135,20 @@ export function RequirementsStep(props: Props) {
             <tbody>
               {requirements.map((r, idx) => (
                 <tr key={r.id || idx}>
-                  <td>
-                    <Form.Control
-                      value={r.id}
-                      onChange={(e) => {
-                        const next = [...requirements];
-                        next[idx] = { ...next[idx], id: e.target.value };
-                        onChangeRequirements(next);
-                      }}
+                  <td className="result-table__id">{r.id || '-'}</td>
+                  <td>{r.ator || '-'}</td>
+                  <td>{r.acao || '-'}</td>
+                  <td>{r.objeto || '-'}</td>
+                  <td>{r.prioridade || '-'}</td>
+                  <td className="result-table__long">{r.descricao || '-'}</td>
+                  <td className="result-table__muted">{r.origem || '-'}</td>
+                  <td className="text-end">
+                    <ResultItemActions
+                      editLabel={`Editar requisito ${r.id || idx + 1}`}
+                      deleteLabel={`Excluir requisito ${r.id || idx + 1}`}
+                      onEdit={() => startEditRequirement(idx)}
+                      onDelete={() => removeRequirement(idx)}
                     />
-                  </td>
-                  <td>
-                    <Form.Control
-                      value={r.ator}
-                      onChange={(e) => {
-                        const next = [...requirements];
-                        next[idx] = { ...next[idx], ator: e.target.value };
-                        onChangeRequirements(next);
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <Form.Control
-                      value={r.acao}
-                      onChange={(e) => {
-                        const next = [...requirements];
-                        next[idx] = { ...next[idx], acao: e.target.value };
-                        onChangeRequirements(next);
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <Form.Control
-                      value={r.objeto}
-                      onChange={(e) => {
-                        const next = [...requirements];
-                        next[idx] = { ...next[idx], objeto: e.target.value };
-                        onChangeRequirements(next);
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <Form.Select
-                      value={r.prioridade}
-                      onChange={(e) => {
-                        const next = [...requirements];
-                        next[idx] = {
-                          ...next[idx],
-                          prioridade: e.target.value as FunctionalRequirement['prioridade'],
-                        };
-                        onChangeRequirements(next);
-                      }}
-                    >
-                      <option value="Alta">Alta</option>
-                      <option value="Media">Média</option>
-                      <option value="Baixa">Baixa</option>
-                    </Form.Select>
-                  </td>
-                  <td>
-                    <Form.Control
-                      value={r.descricao}
-                      onChange={(e) => {
-                        const next = [...requirements];
-                        next[idx] = { ...next[idx], descricao: e.target.value };
-                        onChangeRequirements(next);
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <Form.Control
-                      value={r.origem}
-                      onChange={(e) => {
-                        const next = [...requirements];
-                        next[idx] = { ...next[idx], origem: e.target.value };
-                        onChangeRequirements(next);
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <Button
-                      size="sm"
-                      variant="outline-danger"
-                      onClick={() => onRemoveRequirement(idx)}
-                    >
-                      Remover
-                    </Button>
                   </td>
                 </tr>
               ))}
@@ -199,6 +158,100 @@ export function RequirementsStep(props: Props) {
           <Alert variant="secondary">Nenhum requisito ainda. Extraia com IA acima.</Alert>
         )}
       </div>
+
+      <Modal show={Boolean(draftRequirement)} onHide={closeEditRequirement} size="lg" centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Editar requisito funcional</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {draftRequirement ? (
+            <Form>
+              <div className="result-modal-grid result-modal-grid--two">
+                <Form.Group>
+                  <Form.Label>ID</Form.Label>
+                  <Form.Control
+                    value={draftRequirement.id}
+                    onChange={(e) =>
+                      setDraftRequirement({ ...draftRequirement, id: e.target.value })
+                    }
+                  />
+                </Form.Group>
+                <Form.Group>
+                  <Form.Label>Prioridade</Form.Label>
+                  <Form.Select
+                    value={draftRequirement.prioridade}
+                    onChange={(e) =>
+                      setDraftRequirement({
+                        ...draftRequirement,
+                        prioridade: e.target.value as FunctionalRequirement['prioridade'],
+                      })
+                    }
+                  >
+                    <option value="Alta">Alta</option>
+                    <option value="Media">Média</option>
+                    <option value="Baixa">Baixa</option>
+                  </Form.Select>
+                </Form.Group>
+                <Form.Group>
+                  <Form.Label>Ator</Form.Label>
+                  <Form.Control
+                    value={draftRequirement.ator}
+                    onChange={(e) =>
+                      setDraftRequirement({ ...draftRequirement, ator: e.target.value })
+                    }
+                  />
+                </Form.Group>
+                <Form.Group>
+                  <Form.Label>Ação do requisito</Form.Label>
+                  <Form.Control
+                    value={draftRequirement.acao}
+                    onChange={(e) =>
+                      setDraftRequirement({ ...draftRequirement, acao: e.target.value })
+                    }
+                  />
+                </Form.Group>
+                <Form.Group>
+                  <Form.Label>Objeto</Form.Label>
+                  <Form.Control
+                    value={draftRequirement.objeto}
+                    onChange={(e) =>
+                      setDraftRequirement({ ...draftRequirement, objeto: e.target.value })
+                    }
+                  />
+                </Form.Group>
+                <Form.Group>
+                  <Form.Label>Origem</Form.Label>
+                  <Form.Control
+                    value={draftRequirement.origem}
+                    onChange={(e) =>
+                      setDraftRequirement({ ...draftRequirement, origem: e.target.value })
+                    }
+                  />
+                </Form.Group>
+              </div>
+              <Form.Group className="mt-3">
+                <Form.Label>Descrição</Form.Label>
+                <Form.Control
+                  as="textarea"
+                  rows={3}
+                  value={draftRequirement.descricao}
+                  onChange={(e) =>
+                    setDraftRequirement({ ...draftRequirement, descricao: e.target.value })
+                  }
+                />
+              </Form.Group>
+            </Form>
+          ) : null}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="outline-secondary" onClick={closeEditRequirement}>
+            Cancelar
+          </Button>
+          <Button variant="primary" onClick={saveRequirement}>
+            Salvar
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </>
   );
 }
