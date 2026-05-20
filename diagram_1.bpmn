@@ -1,857 +1,507 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" xmlns:color="http://www.omg.org/spec/BPMN/non-normative/color/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_PlataformaRF" targetNamespace="http://mestrado.exu/plataforma-requisitos" exporter="Camunda Modeler" exporterVersion="5.46.1" modeler:executionPlatform="Camunda Platform" modeler:executionPlatformVersion="7.21.0">
-  <bpmn:collaboration id="Collaboration_PlataformaRF">
-    <bpmn:participant id="Participant_Plataforma" name="Plataforma de Engenharia de Requisitos com Apoio de IA" processRef="Process_PlataformaRF" />
-    <bpmn:textAnnotation id="TA_LegendaCores">
-      <bpmn:text>Cor das raias: amarelo = Stakeholders (decisão humana/validação) | azul = Frontend (Vite+React: formulários, tabelas editáveis, canvas/preview) | cinza = Backend (API/serviços: orquestração e prompts) | verde = API de IA (OpenAI via HTTPS) | roxo = Persistência (Firebase Firestore: sessões em texto)</bpmn:text>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" xmlns:color="http://www.omg.org/spec/BPMN/non-normative/color/1.0" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_MacroIA" targetNamespace="http://mestrado.exu/macro-ia" exporter="Camunda Modeler" exporterVersion="5.46.1" modeler:executionPlatform="Camunda Platform" modeler:executionPlatformVersion="7.21.0">
+  <bpmn:collaboration id="Collaboration_MacroIA">
+    <bpmn:participant id="Participant_ProcessoIA" name="Macroprocesso de engenharia de requisitos apoiado por IA" processRef="Process_MacroIA" />
+    <bpmn:participant id="Participant_OpenAI" name="OpenAI API (servico externo de IA)" processRef="Process_OpenAI" />
+    <bpmn:messageFlow id="MF_RF_REQ" name="prompt com descricao" sourceRef="Sub_ExtrairRFsIA" targetRef="AI_ExtrairRFs" />
+    <bpmn:messageFlow id="MF_RF_RES" name="RFs&#10;estruturados" sourceRef="AI_ExtrairRFs" targetRef="Sub_ExtrairRFsIA" />
+    <bpmn:messageFlow id="MF_UC_REQ" name="prompt com RFs validados" sourceRef="Sub_GerarUCsIA" targetRef="AI_GerarUCs" />
+    <bpmn:messageFlow id="MF_UC_RES" name="UCs estruturados" sourceRef="AI_GerarUCs" targetRef="Sub_GerarUCsIA" />
+    <bpmn:messageFlow id="MF_US_REQ" name="prompt com PlantUML validado" sourceRef="Sub_GerarUSIA" targetRef="AI_GerarUS" />
+    <bpmn:messageFlow id="MF_US_RES" name="User Stories estruturadas" sourceRef="AI_GerarUS" targetRef="Sub_GerarUSIA" />
+    <bpmn:textAnnotation id="TA_Escopo">
+      <bpmn:text>Escopo: autenticação, hospedagem e controle de acesso são pré-condições técnicas do protótipo online para avaliacao; o BPMN modela o processo conceitual de apoio de IA.</bpmn:text>
     </bpmn:textAnnotation>
-    <bpmn:textAnnotation id="TA_LegendaInputs">
-      <bpmn:text>Input inicial: descrição em texto natural (PT-BR).
-Fluxo: IA extrai requisitos funcionais (RFs) → RFs editáveis no frontend (adicionar/remover/editar) → validação → IA gera lista de casos de uso (UCs) → UCs editáveis/validadas → canvas no frontend para diagrama de casos de uso (include/extend) → edição salva como PlantUML (texto) → validação → IA gera User Stories.
-Persistência: tudo salvo como TEXTO em sessões no Firebase Firestore. (Sem geração/armazenamento de PDF.)</bpmn:text>
-    </bpmn:textAnnotation>
-    <bpmn:association id="A_Leg1" associationDirection="None" sourceRef="TA_LegendaCores" targetRef="TA_LegendaInputs" />
   </bpmn:collaboration>
-  <bpmn:process id="Process_PlataformaRF" isExecutable="false">
-    <bpmn:laneSet id="LaneSet_1">
-      <bpmn:lane id="Lane_Stakeholders" name="Stakeholders (equipe de requisitos)">
-        <bpmn:flowNodeRef>Start_Demanda</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_Brainstorming</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>GW_BriefOK</bpmn:flowNodeRef>
+  <bpmn:process id="Process_MacroIA" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_MacroIA">
+      <bpmn:lane id="Lane_Stakeholders" name="Usuario / stakeholders">
+        <bpmn:flowNodeRef>Start_Processo</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_RegistrarBrainstorm</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_DescricaoSuficiente</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ComplementarDescricao</bpmn:flowNodeRef>
         <bpmn:flowNodeRef>Task_RevisarRFs</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>GW_RFsOK</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>GW_AjusteRFs</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_EditarRFs</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_ReformularDescricao</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_BotaoValidarRFs</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_BotaoGerarUC</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_RFsAprovados</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AjustarRFs</bpmn:flowNodeRef>
         <bpmn:flowNodeRef>Task_RevisarUCs</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>GW_UCsOK</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>GW_AjusteUCs</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_BotaoValidarUCs</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_EditarUCs</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_VoltarRFs</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_RevisarDiagramas</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>GW_DiagOK</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_BotaoGerarUS</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_UCsAprovados</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AjustarUCs</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_RevisarDiagrama</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_DiagramaAprovado</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AjustarDiagrama</bpmn:flowNodeRef>
         <bpmn:flowNodeRef>Task_RevisarUS</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>GW_USOK</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>GW_AjusteUS</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_RegerarUS</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_VoltarUCs_AjusteUS</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_BotaoBaixarPDF</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_DownloadPDF</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>End_Encerrar</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>GW_USAprovadas</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AjustarUS</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_FinalizarAnalise</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Processo</bpmn:flowNodeRef>
       </bpmn:lane>
-      <bpmn:lane id="Lane_Frontend" name="Frontend (Vite + React)">
-        <bpmn:flowNodeRef>Task_PreencherFormulario</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_ExibirTabelaRFs</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_ExibirTabelaUCs</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_ExibirDiagramaSVG</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_ExibirTabelaUS</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_DisponibilizarDownload</bpmn:flowNodeRef>
-      </bpmn:lane>
-      <bpmn:lane id="Lane_Backend" name="Backend (API/serviços: orquestração e prompts)">
-        <bpmn:flowNodeRef>Task_ReceberDescricao</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>GW_UsarIARF</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>GW_ModoSugestoes</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>GW_JuncaoRFs</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_ConstruirPromptUS</bpmn:flowNodeRef>
-      </bpmn:lane>
-      <bpmn:lane id="Lane_ApiIA" name="API de IA (OpenAI)">
-        <bpmn:flowNodeRef>Task_OpenAI_RF_Sugestoes</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_OpenAI_RF_Conservador</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_ConverterRFparaUC</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_DetectarRelacoesUML</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_OpenAI_US</bpmn:flowNodeRef>
-      </bpmn:lane>
-      <bpmn:lane id="Lane_Persistencia" name="Persistência (Firebase Firestore: sessões em texto)">
-        <bpmn:flowNodeRef>Task_ReceberJSON_RF</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_GerarArtefatosUC</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_ReceberJSON_US</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Task_ConsolidarPDF</bpmn:flowNodeRef>
+      <bpmn:lane id="Lane_Aplicacao" name="Aplicacao de apoio a engenharia de requisitos">
+        <bpmn:flowNodeRef>Task_GerarDiagrama</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_GerarPDF</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Sub_ExtrairRFsIA</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Sub_GerarUCsIA</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Sub_GerarUSIA</bpmn:flowNodeRef>
       </bpmn:lane>
     </bpmn:laneSet>
-    <bpmn:startEvent id="Start_Demanda" name="Demanda de analise de requisitos">
-      <bpmn:outgoing>F01</bpmn:outgoing>
+    <bpmn:startEvent id="Start_Processo" name="Inicio da analise de requisitos">
+      <bpmn:outgoing>F001</bpmn:outgoing>
     </bpmn:startEvent>
-    <bpmn:userTask id="Task_Brainstorming" name="Brainstorming da equipe&#10;(consolidar problema, atores e expectativas)">
-      <bpmn:incoming>F01</bpmn:incoming>
-      <bpmn:incoming>F_LoopBrief</bpmn:incoming>
-      <bpmn:outgoing>F02</bpmn:outgoing>
+    <bpmn:userTask id="Task_RegistrarBrainstorm" name="Registrar brainstorm e descricao livre">
+      <bpmn:incoming>F001</bpmn:incoming>
+      <bpmn:incoming>F004</bpmn:incoming>
+      <bpmn:outgoing>F002</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:exclusiveGateway id="GW_BriefOK" name="Brief consolidado&#10;e pronto para a interface?">
-      <bpmn:incoming>F02</bpmn:incoming>
-      <bpmn:outgoing>F_LoopBrief</bpmn:outgoing>
-      <bpmn:outgoing>F_BriefOK</bpmn:outgoing>
+    <bpmn:exclusiveGateway id="GW_DescricaoSuficiente" name="Descricao suficiente?">
+      <bpmn:incoming>F002</bpmn:incoming>
+      <bpmn:outgoing>F003</bpmn:outgoing>
+      <bpmn:outgoing>F005</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:userTask id="Task_PreencherFormulario" name="Preencher descrição em texto natural&#10;(textarea)">
-      <bpmn:incoming>F_BriefOK</bpmn:incoming>
-      <bpmn:incoming>F_LoopReformulou</bpmn:incoming>
-      <bpmn:outgoing>F03</bpmn:outgoing>
+    <bpmn:userTask id="Task_ComplementarDescricao" name="Complementar descricao do sistema">
+      <bpmn:incoming>F003</bpmn:incoming>
+      <bpmn:outgoing>F004</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:userTask id="Task_ReceberDescricao" name="Receber e armazenar descrição&#10;(Firestore: descriptionText)">
-      <bpmn:incoming>F03</bpmn:incoming>
-      <bpmn:outgoing>F04</bpmn:outgoing>
+    <bpmn:userTask id="Task_RevisarRFs" name="Revisar e validar requisitos funcionais">
+      <bpmn:incoming>F006</bpmn:incoming>
+      <bpmn:outgoing>F007</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:exclusiveGateway id="GW_UsarIARF" name="Enviar descrição para IA&#10;extrair requisitos funcionais (RFs)">
-      <bpmn:incoming>F04</bpmn:incoming>
-      <bpmn:outgoing>F_RF_API_Sim</bpmn:outgoing>
+    <bpmn:exclusiveGateway id="GW_RFsAprovados" name="RFs aprovados?">
+      <bpmn:incoming>F007</bpmn:incoming>
+      <bpmn:outgoing>F008</bpmn:outgoing>
+      <bpmn:outgoing>F010</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:exclusiveGateway id="GW_ModoSugestoes" name="Chamada de extração de RFs&#10;(frontend: OpenAI /v1/responses)">
-      <bpmn:incoming>F_RF_API_Sim</bpmn:incoming>
-      <bpmn:outgoing>F_Sug_Sim</bpmn:outgoing>
-      <bpmn:outgoing>F_Sug_Nao</bpmn:outgoing>
+    <bpmn:userTask id="Task_AjustarRFs" name="Ajustar descricao ou RFs">
+      <bpmn:incoming>F008</bpmn:incoming>
+      <bpmn:outgoing>F009</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="Task_RevisarUCs" name="Revisar e validar casos de uso">
+      <bpmn:incoming>F011</bpmn:incoming>
+      <bpmn:outgoing>F012</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="GW_UCsAprovados" name="UCs aprovados?">
+      <bpmn:incoming>F012</bpmn:incoming>
+      <bpmn:outgoing>F013</bpmn:outgoing>
+      <bpmn:outgoing>F015</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:serviceTask id="Task_OpenAI_RF_Sugestoes" name="OpenAI: extrair RFs (texto → RFs)" implementation="##WebService">
-      <bpmn:incoming>F_Sug_Sim</bpmn:incoming>
-      <bpmn:outgoing>F_OpenAI_RF1</bpmn:outgoing>
-    </bpmn:serviceTask>
-    <bpmn:serviceTask id="Task_OpenAI_RF_Conservador" name="OpenAI: extrair RFs (texto → RFs)" implementation="##WebService">
-      <bpmn:incoming>F_Sug_Nao</bpmn:incoming>
-      <bpmn:outgoing>F_OpenAI_RF2</bpmn:outgoing>
-    </bpmn:serviceTask>
-    <bpmn:userTask id="Task_ReceberJSON_RF" name="Receber RFs (JSON)&#10;e persistir na sessão (Firestore)">
-      <bpmn:incoming>F_OpenAI_RF1</bpmn:incoming>
-      <bpmn:incoming>F_OpenAI_RF2</bpmn:incoming>
-      <bpmn:outgoing>F_ParaJuncao</bpmn:outgoing>
+    <bpmn:userTask id="Task_AjustarUCs" name="Ajustar UCs, atores ou relacoes">
+      <bpmn:incoming>F013</bpmn:incoming>
+      <bpmn:outgoing>F014</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:exclusiveGateway id="GW_JuncaoRFs" name="Junção: RFs disponiveis para revisao">
-      <bpmn:incoming>F_ParaJuncao</bpmn:incoming>
-      <bpmn:outgoing>F05</bpmn:outgoing>
+    <bpmn:serviceTask id="Task_GerarDiagrama" name="Gerar diagrama de casos de uso" implementation="##WebService">
+      <bpmn:incoming>F015</bpmn:incoming>
+      <bpmn:incoming>F019</bpmn:incoming>
+      <bpmn:outgoing>F016</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="Task_RevisarDiagrama" name="Revisar e validar diagrama">
+      <bpmn:incoming>F016</bpmn:incoming>
+      <bpmn:outgoing>F017</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="GW_DiagramaAprovado" name="Diagrama aprovado?">
+      <bpmn:incoming>F017</bpmn:incoming>
+      <bpmn:outgoing>F018</bpmn:outgoing>
+      <bpmn:outgoing>F020</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:userTask id="Task_ExibirTabelaRFs" name="Exibir RFs editáveis (tabela)&#10;(adicionar/remover/editar)">
-      <bpmn:incoming>F05</bpmn:incoming>
-      <bpmn:incoming>F_LoopRFs</bpmn:incoming>
-      <bpmn:incoming>F_LoopRFsDoUC</bpmn:incoming>
-      <bpmn:outgoing>F06</bpmn:outgoing>
+    <bpmn:userTask id="Task_AjustarDiagrama" name="Ajustar diagrama ou UCs">
+      <bpmn:incoming>F018</bpmn:incoming>
+      <bpmn:outgoing>F019</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:userTask id="Task_RevisarRFs" name="Stakeholders revisam RFs&#10;(rastreabilidade x brief)">
-      <bpmn:incoming>F06</bpmn:incoming>
-      <bpmn:outgoing>F07</bpmn:outgoing>
+    <bpmn:userTask id="Task_RevisarUS" name="Revisar User Stories e criterios">
+      <bpmn:incoming>F021</bpmn:incoming>
+      <bpmn:outgoing>F022</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:exclusiveGateway id="GW_RFsOK" name="RFs validados pelos stakeholders&#10;(gate Etapa 1)?">
-      <bpmn:incoming>F07</bpmn:incoming>
-      <bpmn:outgoing>F_RFs_Nao</bpmn:outgoing>
-      <bpmn:outgoing>F_RFs_Sim</bpmn:outgoing>
+    <bpmn:exclusiveGateway id="GW_USAprovadas" name="User Stories aprovadas?">
+      <bpmn:incoming>F022</bpmn:incoming>
+      <bpmn:outgoing>F023</bpmn:outgoing>
+      <bpmn:outgoing>F025</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:exclusiveGateway id="GW_AjusteRFs" name="Como corrigir os RFs?">
-      <bpmn:incoming>F_RFs_Nao</bpmn:incoming>
-      <bpmn:outgoing>F_AjusteEditar</bpmn:outgoing>
-      <bpmn:outgoing>F_AjusteReformular</bpmn:outgoing>
-    </bpmn:exclusiveGateway>
-    <bpmn:userTask id="Task_EditarRFs" name="Editar RFs inline na tabela&#10;(sem refazer descricao)">
-      <bpmn:incoming>F_AjusteEditar</bpmn:incoming>
-      <bpmn:outgoing>F_LoopRFs</bpmn:outgoing>
+    <bpmn:userTask id="Task_AjustarUS" name="Regenerar ou ajustar base das User Stories">
+      <bpmn:incoming>F023</bpmn:incoming>
+      <bpmn:outgoing>F024</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:userTask id="Task_ReformularDescricao" name="Reformular brief original&#10;(mudar a string de entrada)">
-      <bpmn:incoming>F_AjusteReformular</bpmn:incoming>
-      <bpmn:outgoing>F_LoopReformulou</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:userTask id="Task_BotaoValidarRFs" name="Clicar &#34;Validar requisitos&#34;&#10;(fecha gate Etapa 1)">
-      <bpmn:incoming>F_RFs_Sim</bpmn:incoming>
-      <bpmn:outgoing>F08</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:userTask id="Task_BotaoGerarUC" name="Clicar &#34;Gerar casos de uso&#34; (IA)">
-      <bpmn:incoming>F08</bpmn:incoming>
-      <bpmn:outgoing>F09</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:serviceTask id="Task_ConverterRFparaUC" name="OpenAI: gerar lista de casos de uso&#10;(RFs validados → UCs)" implementation="##WebService">
-      <bpmn:incoming>F09</bpmn:incoming>
-      <bpmn:outgoing>F10</bpmn:outgoing>
+    <bpmn:serviceTask id="Task_GerarPDF" name="Gerar relatorio PDF para download" implementation="##WebService">
+      <bpmn:incoming>F025</bpmn:incoming>
+      <bpmn:outgoing>F026</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:serviceTask id="Task_DetectarRelacoesUML" name="Preparar diagrama editável&#10;(UCs → canvas + PlantUML base)" implementation="##WebService">
-      <bpmn:incoming>F10</bpmn:incoming>
-      <bpmn:outgoing>F11</bpmn:outgoing>
-    </bpmn:serviceTask>
-    <bpmn:userTask id="Task_ExibirTabelaUCs" name="Exibir UCs editáveis (tabela)&#10;(adicionar/remover/editar)">
-      <bpmn:incoming>F11</bpmn:incoming>
-      <bpmn:incoming>F_LoopUCs</bpmn:incoming>
-      <bpmn:incoming>F_LoopUCsDeUS</bpmn:incoming>
-      <bpmn:outgoing>F12</bpmn:outgoing>
+    <bpmn:userTask id="Task_FinalizarAnalise" name="Finalizar extracao">
+      <bpmn:incoming>F026</bpmn:incoming>
+      <bpmn:outgoing>F027</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:serviceTask id="Task_GerarArtefatosUC" name="Persistir diagrama editado&#10;(salvar PlantUML em texto no Firestore)">
-      <bpmn:incoming>F14</bpmn:incoming>
-      <bpmn:outgoing>F15</bpmn:outgoing>
-    </bpmn:serviceTask>
-    <bpmn:userTask id="Task_ConstruirPromptUS" name="Montar payload&#10;(PlantUML validado → User Stories)">
-      <bpmn:incoming>F18</bpmn:incoming>
-      <bpmn:outgoing>F19</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:serviceTask id="Task_OpenAI_US" name="OpenAI: gerar User Stories&#10;(a partir do PlantUML validado)" implementation="##WebService">
-      <bpmn:incoming>F19</bpmn:incoming>
-      <bpmn:incoming>F_LoopUSRegerar</bpmn:incoming>
-      <bpmn:outgoing>F20</bpmn:outgoing>
-    </bpmn:serviceTask>
-    <bpmn:userTask id="Task_ReceberJSON_US" name="Receber User Stories (JSON)&#10;e persistir na sessão (Firestore)">
-      <bpmn:incoming>F20</bpmn:incoming>
-      <bpmn:outgoing>F21</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:userTask id="Task_ExibirTabelaUS" name="Exibir tabela de User Stories&#10;com criterios de aceitacao">
-      <bpmn:incoming>F21</bpmn:incoming>
-      <bpmn:outgoing>F22</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:userTask id="Task_RevisarUS" name="Stakeholders revisam User Stories&#10;e criterios de aceitacao">
-      <bpmn:incoming>F22</bpmn:incoming>
-      <bpmn:outgoing>F23</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:exclusiveGateway id="GW_USOK" name="User Stories validadas&#10;(gate Etapa 3)?">
-      <bpmn:incoming>F23</bpmn:incoming>
-      <bpmn:outgoing>F_US_Nao</bpmn:outgoing>
-      <bpmn:outgoing>F_US_Sim</bpmn:outgoing>
-    </bpmn:exclusiveGateway>
-    <bpmn:userTask id="Task_RegerarUS" name="Solicitar nova rodada na IA&#10;(mesma base de UCs)">
-      <bpmn:incoming>F_USAjusteRegerar</bpmn:incoming>
-      <bpmn:outgoing>F_LoopUSRegerar</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:userTask id="Task_VoltarUCs_AjusteUS" name="Voltar a editar UCs&#10;(retoma fluxo da Etapa 2)">
-      <bpmn:incoming>F_USAjusteVoltar</bpmn:incoming>
-      <bpmn:outgoing>F_LoopUCsDeUS</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:userTask id="Task_BotaoBaixarPDF" name="Finalizar análise&#10;(salvar sessão)">
-      <bpmn:incoming>F_US_Sim</bpmn:incoming>
-      <bpmn:outgoing>F24</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:serviceTask id="Task_ConsolidarPDF" name="Consolidar e salvar sessão final&#10;(texto: descrição, RFs, UCs, PlantUML, User Stories) no Firestore">
-      <bpmn:incoming>F24</bpmn:incoming>
-      <bpmn:outgoing>F25</bpmn:outgoing>
-    </bpmn:serviceTask>
-    <bpmn:userTask id="Task_DisponibilizarDownload" name="Exibir confirmação de salvamento&#10;(retornar ao dashboard)">
-      <bpmn:incoming>F25</bpmn:incoming>
-      <bpmn:outgoing>F26</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:userTask id="Task_DownloadPDF" name="Encerrar iteração">
-      <bpmn:incoming>F26</bpmn:incoming>
-      <bpmn:outgoing>F27</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:endEvent id="End_Encerrar" name="Iteracao concluida&#10;(rastreabilidade brief para US)">
-      <bpmn:incoming>F27</bpmn:incoming>
+    <bpmn:endEvent id="End_Processo" name="Analise concluida">
+      <bpmn:incoming>F027</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:exclusiveGateway id="GW_AjusteUCs" name="Como corrigir os UCs?">
-      <bpmn:incoming>F_UCs_Nao</bpmn:incoming>
-      <bpmn:outgoing>F_UC_Editar</bpmn:outgoing>
-      <bpmn:outgoing>F_UC_Voltar</bpmn:outgoing>
-    </bpmn:exclusiveGateway>
-    <bpmn:userTask id="Task_RevisarUCs" name="Stakeholders revisam UCs&#10;(coerencia, atores, fluxos)">
-      <bpmn:incoming>F12</bpmn:incoming>
-      <bpmn:outgoing>F13</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:exclusiveGateway id="GW_UCsOK" name="UCs validados pelos stakeholders&#10;(gate Etapa 2)?">
-      <bpmn:incoming>F13</bpmn:incoming>
-      <bpmn:outgoing>F_UCs_Nao</bpmn:outgoing>
-      <bpmn:outgoing>F_UCs_Sim</bpmn:outgoing>
-    </bpmn:exclusiveGateway>
-    <bpmn:userTask id="Task_BotaoValidarUCs" name="Clicar &#34;Validar casos de uso&#34;&#10;(fecha gate Etapa 2)">
-      <bpmn:incoming>F_UCs_Sim</bpmn:incoming>
-      <bpmn:outgoing>F14</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:userTask id="Task_EditarUCs" name="Editar UCs inline&#10;(salvar reexporta artefatos)">
-      <bpmn:incoming>F_UC_Editar</bpmn:incoming>
-      <bpmn:incoming>F_Diag_Nao</bpmn:incoming>
-      <bpmn:outgoing>F_LoopUCs</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:userTask id="Task_ExibirDiagramaSVG" name="Canvas/preview do diagrama&#10;(React Flow + SVG PlantUML)">
-      <bpmn:incoming>F15</bpmn:incoming>
-      <bpmn:outgoing>F16</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:userTask id="Task_RevisarDiagramas" name="Revisar diagrama no canvas&#10;(include/extend + relações)">
-      <bpmn:incoming>F16</bpmn:incoming>
-      <bpmn:outgoing>F17</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:exclusiveGateway id="GW_DiagOK" name="Diagrama aprovado?">
-      <bpmn:incoming>F17</bpmn:incoming>
-      <bpmn:outgoing>F_Diag_Nao</bpmn:outgoing>
-      <bpmn:outgoing>F_Diag_Sim</bpmn:outgoing>
-    </bpmn:exclusiveGateway>
-    <bpmn:userTask id="Task_BotaoGerarUS" name="Clicar &#34;Gerar User Stories&#34; (IA)">
-      <bpmn:incoming>F_Diag_Sim</bpmn:incoming>
-      <bpmn:outgoing>F18</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:userTask id="Task_VoltarRFs" name="Voltar a revisar RFs&#10;(corrigir antes dos UCs)">
-      <bpmn:incoming>F_UC_Voltar</bpmn:incoming>
-      <bpmn:outgoing>F_LoopRFsDoUC</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:exclusiveGateway id="GW_AjusteUS" name="Como corrigir as User Stories?">
-      <bpmn:incoming>F_US_Nao</bpmn:incoming>
-      <bpmn:outgoing>F_USAjusteRegerar</bpmn:outgoing>
-      <bpmn:outgoing>F_USAjusteVoltar</bpmn:outgoing>
-    </bpmn:exclusiveGateway>
-    <bpmn:sequenceFlow id="F01" sourceRef="Start_Demanda" targetRef="Task_Brainstorming" />
-    <bpmn:sequenceFlow id="F_LoopBrief" name="Nao - refinar brief" sourceRef="GW_BriefOK" targetRef="Task_Brainstorming" />
-    <bpmn:sequenceFlow id="F02" sourceRef="Task_Brainstorming" targetRef="GW_BriefOK" />
-    <bpmn:sequenceFlow id="F_BriefOK" name="Sim" sourceRef="GW_BriefOK" targetRef="Task_PreencherFormulario" />
-    <bpmn:sequenceFlow id="F_LoopReformulou" sourceRef="Task_ReformularDescricao" targetRef="Task_PreencherFormulario" />
-    <bpmn:sequenceFlow id="F03" sourceRef="Task_PreencherFormulario" targetRef="Task_ReceberDescricao" />
-    <bpmn:sequenceFlow id="F04" sourceRef="Task_ReceberDescricao" targetRef="GW_UsarIARF" />
-    <bpmn:sequenceFlow id="F_RF_API_Sim" name="Sim - usar OpenAI" sourceRef="GW_UsarIARF" targetRef="GW_ModoSugestoes" />
-    <bpmn:sequenceFlow id="F_Sug_Sim" name="Sim - com sugestoes" sourceRef="GW_ModoSugestoes" targetRef="Task_OpenAI_RF_Sugestoes" />
-    <bpmn:sequenceFlow id="F_Sug_Nao" name="Nao - so explicito" sourceRef="GW_ModoSugestoes" targetRef="Task_OpenAI_RF_Conservador" />
-    <bpmn:sequenceFlow id="F_OpenAI_RF1" sourceRef="Task_OpenAI_RF_Sugestoes" targetRef="Task_ReceberJSON_RF" />
-    <bpmn:sequenceFlow id="F_OpenAI_RF2" sourceRef="Task_OpenAI_RF_Conservador" targetRef="Task_ReceberJSON_RF" />
-    <bpmn:sequenceFlow id="F_ParaJuncao" sourceRef="Task_ReceberJSON_RF" targetRef="GW_JuncaoRFs" />
-    <bpmn:sequenceFlow id="F05" sourceRef="GW_JuncaoRFs" targetRef="Task_ExibirTabelaRFs" />
-    <bpmn:sequenceFlow id="F_LoopRFs" sourceRef="Task_EditarRFs" targetRef="Task_ExibirTabelaRFs" />
-    <bpmn:sequenceFlow id="F_LoopRFsDoUC" sourceRef="Task_VoltarRFs" targetRef="Task_ExibirTabelaRFs" />
-    <bpmn:sequenceFlow id="F06" sourceRef="Task_ExibirTabelaRFs" targetRef="Task_RevisarRFs" />
-    <bpmn:sequenceFlow id="F07" sourceRef="Task_RevisarRFs" targetRef="GW_RFsOK" />
-    <bpmn:sequenceFlow id="F_RFs_Nao" name="Nao - corrigir" sourceRef="GW_RFsOK" targetRef="GW_AjusteRFs" />
-    <bpmn:sequenceFlow id="F_RFs_Sim" name="Sim - validar" sourceRef="GW_RFsOK" targetRef="Task_BotaoValidarRFs" />
-    <bpmn:sequenceFlow id="F_AjusteEditar" name="Editar RFs inline" sourceRef="GW_AjusteRFs" targetRef="Task_EditarRFs" />
-    <bpmn:sequenceFlow id="F_AjusteReformular" name="Reformular brief" sourceRef="GW_AjusteRFs" targetRef="Task_ReformularDescricao" />
-    <bpmn:sequenceFlow id="F08" sourceRef="Task_BotaoValidarRFs" targetRef="Task_BotaoGerarUC" />
-    <bpmn:sequenceFlow id="F09" name="RFs aprovados para OpenAI" sourceRef="Task_BotaoGerarUC" targetRef="Task_ConverterRFparaUC" />
-    <bpmn:sequenceFlow id="F10" name="JSON de UCs" sourceRef="Task_ConverterRFparaUC" targetRef="Task_DetectarRelacoesUML" />
-    <bpmn:sequenceFlow id="F11" name="UCs + relacoes UML" sourceRef="Task_DetectarRelacoesUML" targetRef="Task_ExibirTabelaUCs" />
-    <bpmn:sequenceFlow id="F_LoopUCs" sourceRef="Task_EditarUCs" targetRef="Task_ExibirTabelaUCs" />
-    <bpmn:sequenceFlow id="F_LoopUCsDeUS" sourceRef="Task_VoltarUCs_AjusteUS" targetRef="Task_ExibirTabelaUCs" />
-    <bpmn:sequenceFlow id="F12" sourceRef="Task_ExibirTabelaUCs" targetRef="Task_RevisarUCs" />
-    <bpmn:sequenceFlow id="F14" sourceRef="Task_BotaoValidarUCs" targetRef="Task_GerarArtefatosUC" />
-    <bpmn:sequenceFlow id="F15" sourceRef="Task_GerarArtefatosUC" targetRef="Task_ExibirDiagramaSVG" />
-    <bpmn:sequenceFlow id="F18" sourceRef="Task_BotaoGerarUS" targetRef="Task_ConstruirPromptUS" />
-    <bpmn:sequenceFlow id="F19" sourceRef="Task_ConstruirPromptUS" targetRef="Task_OpenAI_US" />
-    <bpmn:sequenceFlow id="F_LoopUSRegerar" sourceRef="Task_RegerarUS" targetRef="Task_OpenAI_US" />
-    <bpmn:sequenceFlow id="F20" sourceRef="Task_OpenAI_US" targetRef="Task_ReceberJSON_US" />
-    <bpmn:sequenceFlow id="F21" sourceRef="Task_ReceberJSON_US" targetRef="Task_ExibirTabelaUS" />
-    <bpmn:sequenceFlow id="F22" sourceRef="Task_ExibirTabelaUS" targetRef="Task_RevisarUS" />
-    <bpmn:sequenceFlow id="F23" sourceRef="Task_RevisarUS" targetRef="GW_USOK" />
-    <bpmn:sequenceFlow id="F_US_Nao" name="Nao - corrigir" sourceRef="GW_USOK" targetRef="GW_AjusteUS" />
-    <bpmn:sequenceFlow id="F_US_Sim" name="Sim - aprovado" sourceRef="GW_USOK" targetRef="Task_BotaoBaixarPDF" />
-    <bpmn:sequenceFlow id="F_USAjusteRegerar" name="Regerar com IA" sourceRef="GW_AjusteUS" targetRef="Task_RegerarUS" />
-    <bpmn:sequenceFlow id="F_USAjusteVoltar" name="Voltar a UCs" sourceRef="GW_AjusteUS" targetRef="Task_VoltarUCs_AjusteUS" />
-    <bpmn:sequenceFlow id="F24" sourceRef="Task_BotaoBaixarPDF" targetRef="Task_ConsolidarPDF" />
-    <bpmn:sequenceFlow id="F25" sourceRef="Task_ConsolidarPDF" targetRef="Task_DisponibilizarDownload" />
-    <bpmn:sequenceFlow id="F26" sourceRef="Task_DisponibilizarDownload" targetRef="Task_DownloadPDF" />
-    <bpmn:sequenceFlow id="F27" sourceRef="Task_DownloadPDF" targetRef="End_Encerrar" />
-    <bpmn:sequenceFlow id="F_UCs_Nao" name="Nao - corrigir" sourceRef="GW_UCsOK" targetRef="GW_AjusteUCs" />
-    <bpmn:sequenceFlow id="F_UC_Editar" name="Editar UCs inline" sourceRef="GW_AjusteUCs" targetRef="Task_EditarUCs" />
-    <bpmn:sequenceFlow id="F_UC_Voltar" name="Voltar a RFs" sourceRef="GW_AjusteUCs" targetRef="Task_VoltarRFs" />
-    <bpmn:sequenceFlow id="F13" sourceRef="Task_RevisarUCs" targetRef="GW_UCsOK" />
-    <bpmn:sequenceFlow id="F_UCs_Sim" name="Sim - validar" sourceRef="GW_UCsOK" targetRef="Task_BotaoValidarUCs" />
-    <bpmn:sequenceFlow id="F_Diag_Nao" name="Nao - editar UCs" sourceRef="GW_DiagOK" targetRef="Task_EditarUCs" />
-    <bpmn:sequenceFlow id="F16" sourceRef="Task_ExibirDiagramaSVG" targetRef="Task_RevisarDiagramas" />
-    <bpmn:sequenceFlow id="F17" sourceRef="Task_RevisarDiagramas" targetRef="GW_DiagOK" />
-    <bpmn:sequenceFlow id="F_Diag_Sim" name="Sim - aprovados" sourceRef="GW_DiagOK" targetRef="Task_BotaoGerarUS" />
+    <bpmn:subProcess id="Sub_ExtrairRFsIA" name="Subprocesso: extrair RFs com IA&#10;(descricao -&#62; requisitos funcionais)">
+      <bpmn:incoming>F005</bpmn:incoming>
+      <bpmn:incoming>F009</bpmn:incoming>
+      <bpmn:outgoing>F006</bpmn:outgoing>
+    </bpmn:subProcess>
+    <bpmn:subProcess id="Sub_GerarUCsIA" name="Subprocesso: gerar UCs com IA&#10;(RFs validados -&#62; casos de uso)">
+      <bpmn:incoming>F010</bpmn:incoming>
+      <bpmn:incoming>F014</bpmn:incoming>
+      <bpmn:outgoing>F011</bpmn:outgoing>
+    </bpmn:subProcess>
+    <bpmn:subProcess id="Sub_GerarUSIA" name="Subprocesso: gerar User Stories com IA&#10;(PlantUML validado -&#62; User Stories)">
+      <bpmn:incoming>F020</bpmn:incoming>
+      <bpmn:incoming>F024</bpmn:incoming>
+      <bpmn:outgoing>F021</bpmn:outgoing>
+    </bpmn:subProcess>
+    <bpmn:sequenceFlow id="F001" sourceRef="Start_Processo" targetRef="Task_RegistrarBrainstorm" />
+    <bpmn:sequenceFlow id="F004" sourceRef="Task_ComplementarDescricao" targetRef="Task_RegistrarBrainstorm" />
+    <bpmn:sequenceFlow id="F002" sourceRef="Task_RegistrarBrainstorm" targetRef="GW_DescricaoSuficiente" />
+    <bpmn:sequenceFlow id="F003" name="Nao" sourceRef="GW_DescricaoSuficiente" targetRef="Task_ComplementarDescricao" />
+    <bpmn:sequenceFlow id="F005" name="Sim" sourceRef="GW_DescricaoSuficiente" targetRef="Sub_ExtrairRFsIA" />
+    <bpmn:sequenceFlow id="F006" sourceRef="Sub_ExtrairRFsIA" targetRef="Task_RevisarRFs" />
+    <bpmn:sequenceFlow id="F007" sourceRef="Task_RevisarRFs" targetRef="GW_RFsAprovados" />
+    <bpmn:sequenceFlow id="F008" name="Nao" sourceRef="GW_RFsAprovados" targetRef="Task_AjustarRFs" />
+    <bpmn:sequenceFlow id="F010" name="Sim" sourceRef="GW_RFsAprovados" targetRef="Sub_GerarUCsIA" />
+    <bpmn:sequenceFlow id="F009" sourceRef="Task_AjustarRFs" targetRef="Sub_ExtrairRFsIA" />
+    <bpmn:sequenceFlow id="F011" sourceRef="Sub_GerarUCsIA" targetRef="Task_RevisarUCs" />
+    <bpmn:sequenceFlow id="F012" sourceRef="Task_RevisarUCs" targetRef="GW_UCsAprovados" />
+    <bpmn:sequenceFlow id="F013" name="Nao" sourceRef="GW_UCsAprovados" targetRef="Task_AjustarUCs" />
+    <bpmn:sequenceFlow id="F015" name="Sim" sourceRef="GW_UCsAprovados" targetRef="Task_GerarDiagrama" />
+    <bpmn:sequenceFlow id="F014" sourceRef="Task_AjustarUCs" targetRef="Sub_GerarUCsIA" />
+    <bpmn:sequenceFlow id="F019" sourceRef="Task_AjustarDiagrama" targetRef="Task_GerarDiagrama" />
+    <bpmn:sequenceFlow id="F016" sourceRef="Task_GerarDiagrama" targetRef="Task_RevisarDiagrama" />
+    <bpmn:sequenceFlow id="F017" sourceRef="Task_RevisarDiagrama" targetRef="GW_DiagramaAprovado" />
+    <bpmn:sequenceFlow id="F018" name="Nao" sourceRef="GW_DiagramaAprovado" targetRef="Task_AjustarDiagrama" />
+    <bpmn:sequenceFlow id="F020" name="Sim" sourceRef="GW_DiagramaAprovado" targetRef="Sub_GerarUSIA" />
+    <bpmn:sequenceFlow id="F021" sourceRef="Sub_GerarUSIA" targetRef="Task_RevisarUS" />
+    <bpmn:sequenceFlow id="F022" sourceRef="Task_RevisarUS" targetRef="GW_USAprovadas" />
+    <bpmn:sequenceFlow id="F023" name="Nao" sourceRef="GW_USAprovadas" targetRef="Task_AjustarUS" />
+    <bpmn:sequenceFlow id="F025" name="Sim" sourceRef="GW_USAprovadas" targetRef="Task_GerarPDF" />
+    <bpmn:sequenceFlow id="F024" sourceRef="Task_AjustarUS" targetRef="Sub_GerarUSIA" />
+    <bpmn:sequenceFlow id="F026" sourceRef="Task_GerarPDF" targetRef="Task_FinalizarAnalise" />
+    <bpmn:sequenceFlow id="F027" sourceRef="Task_FinalizarAnalise" targetRef="End_Processo" />
   </bpmn:process>
-  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_PlataformaRF">
-      <bpmndi:BPMNShape id="Participant_di" bpmnElement="Participant_Plataforma" isHorizontal="false" bioc:stroke="#1f2937" bioc:fill="#ffffff" color:background-color="#ffffff" color:border-color="#1f2937">
-        <dc:Bounds x="160" y="80" width="1760" height="5400" />
+  <bpmn:process id="Process_OpenAI" isExecutable="false">
+    <bpmn:serviceTask id="AI_ExtrairRFs" name="OpenAI: extrair RFs" implementation="##WebService" />
+    <bpmn:serviceTask id="AI_GerarUCs" name="OpenAI: gerar UCs" implementation="##WebService" />
+    <bpmn:serviceTask id="AI_GerarUS" name="OpenAI: gerar User Stories" implementation="##WebService" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_MacroIA">
+    <bpmndi:BPMNPlane id="BPMNPlane_MacroIA" bpmnElement="Collaboration_MacroIA">
+      <bpmndi:BPMNShape id="Participant_OpenAI_di" bpmnElement="Participant_OpenAI" isHorizontal="false" bioc:stroke="#16a34a" bioc:fill="#f0fdf4" color:background-color="#f0fdf4" color:border-color="#16a34a">
+        <dc:Bounds x="1110" y="80" width="360" height="2520" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AI_ExtrairRFs_di" bpmnElement="AI_ExtrairRFs" bioc:stroke="#16a34a" bioc:fill="#dcfce7" color:background-color="#dcfce7" color:border-color="#16a34a">
+        <dc:Bounds x="1180" y="502" width="220" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AI_GerarUCs_di" bpmnElement="AI_GerarUCs" bioc:stroke="#16a34a" bioc:fill="#dcfce7" color:background-color="#dcfce7" color:border-color="#16a34a">
+        <dc:Bounds x="1170" y="945" width="220" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AI_GerarUS_di" bpmnElement="AI_GerarUS" bioc:stroke="#16a34a" bioc:fill="#dcfce7" color:background-color="#dcfce7" color:border-color="#16a34a">
+        <dc:Bounds x="1170" y="1865" width="220" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_ProcessoIA_di" bpmnElement="Participant_ProcessoIA" isHorizontal="false" bioc:stroke="#1f2937" bioc:fill="#ffffff" color:background-color="#ffffff" color:border-color="#1f2937">
+        <dc:Bounds x="190" y="50" width="900" height="2550" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Lane_Stakeholders_di" bpmnElement="Lane_Stakeholders" isHorizontal="false" bioc:stroke="#a47800" bioc:fill="#fffbeb" color:background-color="#fffbeb" color:border-color="#a47800">
-        <dc:Bounds x="190" y="80" width="340" height="5400" />
+        <dc:Bounds x="230" y="80" width="350" height="2520" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Lane_Interface_di" bpmnElement="Lane_Frontend" isHorizontal="false" bioc:stroke="#1d4ed8" bioc:fill="#eff6ff" color:background-color="#eff6ff" color:border-color="#1d4ed8">
-        <dc:Bounds x="530" y="80" width="340" height="5400" />
+      <bpmndi:BPMNShape id="Lane_Aplicacao_di" bpmnElement="Lane_Aplicacao" isHorizontal="false" bioc:stroke="#1d4ed8" bioc:fill="#eff6ff" color:background-color="#eff6ff" color:border-color="#1d4ed8">
+        <dc:Bounds x="600" y="80" width="450" height="2520" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Lane_Backend_di" bpmnElement="Lane_Backend" isHorizontal="false" bioc:stroke="#6b7280" bioc:fill="#f3f4f6" color:background-color="#f3f4f6" color:border-color="#6b7280">
-        <dc:Bounds x="870" y="80" width="340" height="5400" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Lane_OpenAI_di" bpmnElement="Lane_ApiIA" isHorizontal="false" bioc:stroke="#16a34a" bioc:fill="#f0fdf4" color:background-color="#f0fdf4" color:border-color="#16a34a">
-        <dc:Bounds x="1210" y="80" width="340" height="5400" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Lane_Extracao_di" bpmnElement="Lane_Persistencia" isHorizontal="false" bioc:stroke="#7c3aed" bioc:fill="#faf5ff" color:background-color="#faf5ff" color:border-color="#7c3aed">
-        <dc:Bounds x="1550" y="80" width="340" height="5400" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Start_Demanda_di" bpmnElement="Start_Demanda" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="342" y="120" width="36" height="36" />
+      <bpmndi:BPMNShape id="Start_Processo_di" bpmnElement="Start_Processo" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="387" y="102" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="280" y="160" width="160" height="40" />
+          <dc:Bounds x="310" y="138" width="79" height="27" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_Brainstorming_di" bpmnElement="Task_Brainstorming" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="270" y="180" width="180" height="80" />
+      <bpmndi:BPMNShape id="Task_RegistrarBrainstorm_di" bpmnElement="Task_RegistrarBrainstorm" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="310" y="204" width="190" height="76" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="GW_BriefOK_di" bpmnElement="GW_BriefOK" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="335" y="300" width="50" height="50" />
+      <bpmndi:BPMNShape id="GW_DescricaoSuficiente_di" bpmnElement="GW_DescricaoSuficiente" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="380" y="339" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="390" y="292" width="130" height="60" />
+          <dc:Bounds x="343" y="389" width="53" height="27" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_PreencherFormulario_di" bpmnElement="Task_PreencherFormulario" bioc:stroke="#1d4ed8" bioc:fill="#dbeafe" color:background-color="#dbeafe" color:border-color="#1d4ed8">
-        <dc:Bounds x="600" y="380" width="200" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_ReceberDescricao_di" bpmnElement="Task_ReceberDescricao" bioc:stroke="#6b7280" bioc:fill="#f3f4f6" color:background-color="#f3f4f6" color:border-color="#6b7280">
-        <dc:Bounds x="930" y="520" width="200" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="GW_UsarIARF_di" bpmnElement="GW_UsarIARF" isMarkerVisible="true" bioc:stroke="#6b7280" bioc:fill="#f3f4f6" color:background-color="#f3f4f6" color:border-color="#6b7280">
-        <dc:Bounds x="1015" y="640" width="50" height="50" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="1075" y="632" width="140" height="60" />
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="GW_ModoSugestoes_di" bpmnElement="GW_ModoSugestoes" isMarkerVisible="true" bioc:stroke="#6b7280" bioc:fill="#f3f4f6" color:background-color="#f3f4f6" color:border-color="#6b7280">
-        <dc:Bounds x="1015" y="760" width="50" height="50" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="1075" y="752" width="160" height="70" />
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_OpenAI_RF_Sugestoes_di" bpmnElement="Task_OpenAI_RF_Sugestoes" bioc:stroke="#16a34a" bioc:fill="#dcfce7" color:background-color="#dcfce7" color:border-color="#16a34a">
-        <dc:Bounds x="1280" y="900" width="200" height="70" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_OpenAI_RF_Conservador_di" bpmnElement="Task_OpenAI_RF_Conservador" bioc:stroke="#16a34a" bioc:fill="#dcfce7" color:background-color="#dcfce7" color:border-color="#16a34a">
-        <dc:Bounds x="1280" y="1000" width="200" height="70" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_ReceberJSON_RF_di" bpmnElement="Task_ReceberJSON_RF" bioc:stroke="#7c3aed" bioc:fill="#ede9fe" color:background-color="#ede9fe" color:border-color="#7c3aed">
-        <dc:Bounds x="1610" y="1140" width="220" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="GW_JuncaoRFs_di" bpmnElement="GW_JuncaoRFs" isMarkerVisible="true" bioc:stroke="#6b7280" bioc:fill="#f3f4f6" color:background-color="#f3f4f6" color:border-color="#6b7280">
-        <dc:Bounds x="1015" y="1260" width="50" height="50" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="1075" y="1258" width="150" height="55" />
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_ExibirTabelaRFs_di" bpmnElement="Task_ExibirTabelaRFs" bioc:stroke="#1d4ed8" bioc:fill="#dbeafe" color:background-color="#dbeafe" color:border-color="#1d4ed8">
-        <dc:Bounds x="600" y="1380" width="200" height="80" />
+      <bpmndi:BPMNShape id="Task_ComplementarDescricao_di" bpmnElement="Task_ComplementarDescricao" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="310" y="448" width="190" height="76" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Task_RevisarRFs_di" bpmnElement="Task_RevisarRFs" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="270" y="1500" width="180" height="80" />
+        <dc:Bounds x="310" y="622" width="190" height="76" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="GW_RFsOK_di" bpmnElement="GW_RFsOK" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="335" y="1620" width="50" height="50" />
+      <bpmndi:BPMNShape id="GW_RFsAprovados_di" bpmnElement="GW_RFsAprovados" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="380" y="755" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="390" y="1608" width="140" height="65" />
+          <dc:Bounds x="288.5" y="773" width="81" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="GW_AjusteRFs_di" bpmnElement="GW_AjusteRFs" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="210" y="1740" width="50" height="50" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="270" y="1735" width="150" height="45" />
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_EditarRFs_di" bpmnElement="Task_EditarRFs" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="200" y="1860" width="180" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_ReformularDescricao_di" bpmnElement="Task_ReformularDescricao" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="200" y="1980" width="180" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_BotaoValidarRFs_di" bpmnElement="Task_BotaoValidarRFs" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="340" y="1740" width="170" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_BotaoGerarUC_di" bpmnElement="Task_BotaoGerarUC" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="350" y="1860" width="180" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_ConverterRFparaUC_di" bpmnElement="Task_ConverterRFparaUC" bioc:stroke="#16a34a" bioc:fill="#dcfce7" color:background-color="#dcfce7" color:border-color="#16a34a">
-        <dc:Bounds x="1280" y="2120" width="200" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_DetectarRelacoesUML_di" bpmnElement="Task_DetectarRelacoesUML" bioc:stroke="#16a34a" bioc:fill="#dcfce7" color:background-color="#dcfce7" color:border-color="#16a34a">
-        <dc:Bounds x="1280" y="2240" width="200" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_ExibirTabelaUCs_di" bpmnElement="Task_ExibirTabelaUCs" bioc:stroke="#1d4ed8" bioc:fill="#dbeafe" color:background-color="#dbeafe" color:border-color="#1d4ed8">
-        <dc:Bounds x="600" y="2380" width="200" height="80" />
+      <bpmndi:BPMNShape id="Task_AjustarRFs_di" bpmnElement="Task_AjustarRFs" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="310" y="852" width="190" height="76" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Task_RevisarUCs_di" bpmnElement="Task_RevisarUCs" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="270" y="2500" width="180" height="80" />
+        <dc:Bounds x="310" y="1052" width="190" height="76" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="GW_UCsOK_di" bpmnElement="GW_UCsOK" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="335" y="2620" width="50" height="50" />
+      <bpmndi:BPMNShape id="GW_UCsAprovados_di" bpmnElement="GW_UCsAprovados" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="380" y="1185" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="390" y="2608" width="140" height="65" />
+          <dc:Bounds x="288" y="1203" width="82" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="GW_AjusteUCs_di" bpmnElement="GW_AjusteUCs" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="210" y="2740" width="50" height="50" />
+      <bpmndi:BPMNShape id="Task_AjustarUCs_di" bpmnElement="Task_AjustarUCs" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="310" y="1292" width="190" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_GerarDiagrama_di" bpmnElement="Task_GerarDiagrama" bioc:stroke="#1d4ed8" bioc:fill="#dbeafe" color:background-color="#dbeafe" color:border-color="#1d4ed8">
+        <dc:Bounds x="720" y="1382" width="210" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RevisarDiagrama_di" bpmnElement="Task_RevisarDiagrama" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="310" y="1522" width="190" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_DiagramaAprovado_di" bpmnElement="GW_DiagramaAprovado" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="380" y="1655" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="270" y="2735" width="150" height="45" />
+          <dc:Bounds x="313" y="1668" width="52" height="27" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_BotaoValidarUCs_di" bpmnElement="Task_BotaoValidarUCs" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="350" y="2740" width="180" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_EditarUCs_di" bpmnElement="Task_EditarUCs" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="270" y="2860" width="180" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_VoltarRFs_di" bpmnElement="Task_VoltarRFs" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="270" y="2980" width="180" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_GerarArtefatosUC_di" bpmnElement="Task_GerarArtefatosUC" bioc:stroke="#7c3aed" bioc:fill="#ede9fe" color:background-color="#ede9fe" color:border-color="#7c3aed">
-        <dc:Bounds x="1610" y="3100" width="220" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_ConstruirPromptUS_di" bpmnElement="Task_ConstruirPromptUS" bioc:stroke="#6b7280" bioc:fill="#f3f4f6" color:background-color="#f3f4f6" color:border-color="#6b7280">
-        <dc:Bounds x="930" y="3700" width="200" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_OpenAI_US_di" bpmnElement="Task_OpenAI_US" bioc:stroke="#16a34a" bioc:fill="#dcfce7" color:background-color="#dcfce7" color:border-color="#16a34a">
-        <dc:Bounds x="1270" y="3840" width="220" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_ReceberJSON_US_di" bpmnElement="Task_ReceberJSON_US" bioc:stroke="#7c3aed" bioc:fill="#ede9fe" color:background-color="#ede9fe" color:border-color="#7c3aed">
-        <dc:Bounds x="1610" y="3980" width="220" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_ExibirTabelaUS_di" bpmnElement="Task_ExibirTabelaUS" bioc:stroke="#1d4ed8" bioc:fill="#dbeafe" color:background-color="#dbeafe" color:border-color="#1d4ed8">
-        <dc:Bounds x="600" y="4120" width="200" height="80" />
+      <bpmndi:BPMNShape id="Task_AjustarDiagrama_di" bpmnElement="Task_AjustarDiagrama" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="310" y="1762" width="190" height="76" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Task_RevisarUS_di" bpmnElement="Task_RevisarUS" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="270" y="4240" width="180" height="80" />
+        <dc:Bounds x="310" y="1992" width="190" height="76" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="GW_USOK_di" bpmnElement="GW_USOK" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="335" y="4360" width="50" height="50" />
+      <bpmndi:BPMNShape id="GW_USAprovadas_di" bpmnElement="GW_USAprovadas" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="380" y="2125" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="390" y="4352" width="150" height="55" />
+          <dc:Bounds x="308.5" y="2136" width="61" height="27" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_RegerarUS_di" bpmnElement="Task_RegerarUS" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="270" y="4600" width="180" height="80" />
+      <bpmndi:BPMNShape id="Task_AjustarUS_di" bpmnElement="Task_AjustarUS" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="310" y="2232" width="190" height="76" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_VoltarUCs_AjusteUS_di" bpmnElement="Task_VoltarUCs_AjusteUS" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="270" y="4720" width="180" height="80" />
+      <bpmndi:BPMNShape id="Task_GerarPDF_di" bpmnElement="Task_GerarPDF" bioc:stroke="#1d4ed8" bioc:fill="#dbeafe" color:background-color="#dbeafe" color:border-color="#1d4ed8">
+        <dc:Bounds x="720" y="2242" width="210" height="76" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_BotaoBaixarPDF_di" bpmnElement="Task_BotaoBaixarPDF" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="350" y="4480" width="180" height="80" />
+      <bpmndi:BPMNShape id="Task_FinalizarAnalise_di" bpmnElement="Task_FinalizarAnalise" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="310" y="2382" width="190" height="76" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_ConsolidarPDF_di" bpmnElement="Task_ConsolidarPDF" bioc:stroke="#7c3aed" bioc:fill="#ede9fe" color:background-color="#ede9fe" color:border-color="#7c3aed">
-        <dc:Bounds x="1620" y="4760" width="200" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_DisponibilizarDownload_di" bpmnElement="Task_DisponibilizarDownload" bioc:stroke="#1d4ed8" bioc:fill="#dbeafe" color:background-color="#dbeafe" color:border-color="#1d4ed8">
-        <dc:Bounds x="600" y="4900" width="200" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_DownloadPDF_di" bpmnElement="Task_DownloadPDF" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="270" y="5040" width="180" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="End_Encerrar_di" bpmnElement="End_Encerrar" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="342" y="5160" width="36" height="36" />
+      <bpmndi:BPMNShape id="End_Processo_di" bpmnElement="End_Processo" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
+        <dc:Bounds x="387" y="2522" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="280" y="5200" width="170" height="45" />
+          <dc:Bounds x="362" y="2573" width="86" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_ExibirDiagramaSVG_di" bpmnElement="Task_ExibirDiagramaSVG" bioc:stroke="#1d4ed8" bioc:fill="#dbeafe" color:background-color="#dbeafe" color:border-color="#1d4ed8">
-        <dc:Bounds x="590" y="3220" width="220" height="80" />
+      <bpmndi:BPMNShape id="Sub_ExtrairRFsIA_di" bpmnElement="Sub_ExtrairRFsIA" isExpanded="false" bioc:stroke="#1d4ed8" bioc:fill="#dbeafe" color:background-color="#dbeafe" color:border-color="#1d4ed8">
+        <dc:Bounds x="710" y="510" width="230" height="86" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_RevisarDiagramas_di" bpmnElement="Task_RevisarDiagramas" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="270" y="3340" width="180" height="80" />
+      <bpmndi:BPMNShape id="Sub_GerarUCsIA_di" bpmnElement="Sub_GerarUCsIA" isExpanded="false" bioc:stroke="#1d4ed8" bioc:fill="#dbeafe" color:background-color="#dbeafe" color:border-color="#1d4ed8">
+        <dc:Bounds x="700" y="940" width="230" height="86" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="GW_DiagOK_di" bpmnElement="GW_DiagOK" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="335" y="3460" width="50" height="50" />
+      <bpmndi:BPMNShape id="Sub_GerarUSIA_di" bpmnElement="Sub_GerarUSIA" isExpanded="false" bioc:stroke="#1d4ed8" bioc:fill="#dbeafe" color:background-color="#dbeafe" color:border-color="#1d4ed8">
+        <dc:Bounds x="710" y="1860" width="230" height="86" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="F001_di" bpmnElement="F001">
+        <di:waypoint x="405" y="138" />
+        <di:waypoint x="405" y="204" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F004_di" bpmnElement="F004">
+        <di:waypoint x="310" y="486" />
+        <di:waypoint x="156" y="486" />
+        <di:waypoint x="156" y="242" />
+        <di:waypoint x="310" y="242" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F002_di" bpmnElement="F002">
+        <di:waypoint x="405" y="280" />
+        <di:waypoint x="405" y="339" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F003_di" bpmnElement="F003">
+        <di:waypoint x="405" y="389" />
+        <di:waypoint x="405" y="448" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="390" y="3448" width="150" height="55" />
+          <dc:Bounds x="410" y="409" width="21" height="14" />
         </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_BotaoGerarUS_di" bpmnElement="Task_BotaoGerarUS" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="270" y="3580" width="180" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="GW_AjusteUS_di" bpmnElement="GW_AjusteUS" isMarkerVisible="true" bioc:stroke="#a47800" bioc:fill="#fff4cc" color:background-color="#fff4cc" color:border-color="#a47800">
-        <dc:Bounds x="210" y="4480" width="50" height="50" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F005_di" bpmnElement="F005">
+        <di:waypoint x="430" y="364" />
+        <di:waypoint x="825" y="364" />
+        <di:waypoint x="825" y="510" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="270" y="4475" width="160" height="45" />
+          <dc:Bounds x="831" y="427" width="19" height="14" />
         </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F006_di" bpmnElement="F006">
+        <di:waypoint x="825" y="596" />
+        <di:waypoint x="825" y="660" />
+        <di:waypoint x="500" y="660" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F007_di" bpmnElement="F007">
+        <di:waypoint x="405" y="698" />
+        <di:waypoint x="405" y="755" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F008_di" bpmnElement="F008">
+        <di:waypoint x="405" y="805" />
+        <di:waypoint x="405" y="852" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="410" y="820" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F010_di" bpmnElement="F010">
+        <di:waypoint x="430" y="780" />
+        <di:waypoint x="815" y="780" />
+        <di:waypoint x="815" y="940" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="821" y="850" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F009_di" bpmnElement="F009">
+        <di:waypoint x="310" y="890" />
+        <di:waypoint x="156" y="890" />
+        <di:waypoint x="156" y="553" />
+        <di:waypoint x="710" y="553" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F011_di" bpmnElement="F011">
+        <di:waypoint x="815" y="1027" />
+        <di:waypoint x="815" y="1090" />
+        <di:waypoint x="500" y="1090" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F012_di" bpmnElement="F012">
+        <di:waypoint x="405" y="1128" />
+        <di:waypoint x="405" y="1185" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F013_di" bpmnElement="F013">
+        <di:waypoint x="405" y="1235" />
+        <di:waypoint x="405" y="1292" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="410" y="1253" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F015_di" bpmnElement="F015">
+        <di:waypoint x="430" y="1210" />
+        <di:waypoint x="825" y="1210" />
+        <di:waypoint x="825" y="1382" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="831" y="1286" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F014_di" bpmnElement="F014">
+        <di:waypoint x="310" y="1330" />
+        <di:waypoint x="156" y="1330" />
+        <di:waypoint x="156" y="983" />
+        <di:waypoint x="700" y="983" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F019_di" bpmnElement="F019">
+        <di:waypoint x="310" y="1800" />
+        <di:waypoint x="156" y="1800" />
+        <di:waypoint x="156" y="1420" />
+        <di:waypoint x="720" y="1420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F016_di" bpmnElement="F016">
+        <di:waypoint x="825" y="1458" />
+        <di:waypoint x="825" y="1560" />
+        <di:waypoint x="500" y="1560" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F017_di" bpmnElement="F017">
+        <di:waypoint x="405" y="1598" />
+        <di:waypoint x="405" y="1655" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F018_di" bpmnElement="F018">
+        <di:waypoint x="405" y="1705" />
+        <di:waypoint x="405" y="1762" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="410" y="1724" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F020_di" bpmnElement="F020">
+        <di:waypoint x="430" y="1680" />
+        <di:waypoint x="825" y="1680" />
+        <di:waypoint x="825" y="1860" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="831" y="1760" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F021_di" bpmnElement="F021">
+        <di:waypoint x="825" y="1946" />
+        <di:waypoint x="825" y="2030" />
+        <di:waypoint x="500" y="2030" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F022_di" bpmnElement="F022">
+        <di:waypoint x="405" y="2068" />
+        <di:waypoint x="405" y="2125" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F023_di" bpmnElement="F023">
+        <di:waypoint x="405" y="2175" />
+        <di:waypoint x="405" y="2232" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="410" y="2195" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F025_di" bpmnElement="F025">
+        <di:waypoint x="430" y="2150" />
+        <di:waypoint x="825" y="2150" />
+        <di:waypoint x="825" y="2242" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="831" y="2188" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F024_di" bpmnElement="F024">
+        <di:waypoint x="310" y="2270" />
+        <di:waypoint x="156" y="2270" />
+        <di:waypoint x="156" y="1903" />
+        <di:waypoint x="710" y="1903" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F026_di" bpmnElement="F026">
+        <di:waypoint x="825" y="2320" />
+        <di:waypoint x="825" y="2420" />
+        <di:waypoint x="500" y="2420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F027_di" bpmnElement="F027">
+        <di:waypoint x="405" y="2458" />
+        <di:waypoint x="405" y="2522" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_RF_REQ_di" bpmnElement="MF_RF_REQ">
+        <di:waypoint x="940" y="537" />
+        <di:waypoint x="1180" y="537" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="977" y="512" width="59" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_RF_RES_di" bpmnElement="MF_RF_RES">
+        <di:waypoint x="1180" y="556" />
+        <di:waypoint x="940" y="556" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1119" y="556" width="62" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_UC_REQ_di" bpmnElement="MF_UC_REQ">
+        <di:waypoint x="930" y="967" />
+        <di:waypoint x="1170" y="967" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="955" y="942" width="82" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_UC_RES_di" bpmnElement="MF_UC_RES">
+        <di:waypoint x="1170" y="999" />
+        <di:waypoint x="930" y="999" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1081" y="1010" width="86" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_US_REQ_di" bpmnElement="MF_US_REQ">
+        <di:waypoint x="940" y="1887" />
+        <di:waypoint x="1170" y="1887" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="954" y="1841" width="59" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF_US_RES_di" bpmnElement="MF_US_RES">
+        <di:waypoint x="1170" y="1919" />
+        <di:waypoint x="940" y="1919" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1109" y="1936" width="62" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="TA_Escopo_di" bpmnElement="TA_Escopo">
+        <dc:Bounds x="190" y="2610" width="1219.984375" height="25.984375" />
+        <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="TA_LegendaCores_di" bpmnElement="TA_LegendaCores">
-        <dc:Bounds x="220" y="5290" width="760" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="TA_LegendaInputs_di" bpmnElement="TA_LegendaInputs">
-        <dc:Bounds x="1010" y="5270" width="850" height="150" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="F01_di" bpmnElement="F01">
-        <di:waypoint x="360" y="156" />
-        <di:waypoint x="360" y="180" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_LoopBrief_di" bpmnElement="F_LoopBrief">
-        <di:waypoint x="385" y="325" />
-        <di:waypoint x="500" y="325" />
-        <di:waypoint x="500" y="220" />
-        <di:waypoint x="270" y="220" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F02_di" bpmnElement="F02">
-        <di:waypoint x="360" y="260" />
-        <di:waypoint x="360" y="300" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_BriefOK_di" bpmnElement="F_BriefOK">
-        <di:waypoint x="385" y="325" />
-        <di:waypoint x="492.5" y="325" />
-        <di:waypoint x="492.5" y="420" />
-        <di:waypoint x="600" y="420" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_LoopReformulou_di" bpmnElement="F_LoopReformulou">
-        <di:waypoint x="380" y="2020" />
-        <di:waypoint x="850" y="2020" />
-        <di:waypoint x="850" y="420" />
-        <di:waypoint x="600" y="420" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F03_di" bpmnElement="F03">
-        <di:waypoint x="800" y="420" />
-        <di:waypoint x="865" y="420" />
-        <di:waypoint x="865" y="560" />
-        <di:waypoint x="930" y="560" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F04_di" bpmnElement="F04">
-        <di:waypoint x="1030" y="600" />
-        <di:waypoint x="1030" y="620" />
-        <di:waypoint x="1040" y="620" />
-        <di:waypoint x="1040" y="640" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_RF_API_Sim_di" bpmnElement="F_RF_API_Sim">
-        <di:waypoint x="1040" y="690" />
-        <di:waypoint x="1040" y="760" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_Sug_Sim_di" bpmnElement="F_Sug_Sim">
-        <di:waypoint x="1065" y="785" />
-        <di:waypoint x="1172.5" y="785" />
-        <di:waypoint x="1172.5" y="935" />
-        <di:waypoint x="1280" y="935" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_Sug_Nao_di" bpmnElement="F_Sug_Nao">
-        <di:waypoint x="1065" y="785" />
-        <di:waypoint x="1172.5" y="785" />
-        <di:waypoint x="1172.5" y="1035" />
-        <di:waypoint x="1280" y="1035" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_OpenAI_RF1_di" bpmnElement="F_OpenAI_RF1">
-        <di:waypoint x="1480" y="935" />
-        <di:waypoint x="1545" y="935" />
-        <di:waypoint x="1545" y="1180" />
-        <di:waypoint x="1610" y="1180" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_OpenAI_RF2_di" bpmnElement="F_OpenAI_RF2">
-        <di:waypoint x="1480" y="1035" />
-        <di:waypoint x="1545" y="1035" />
-        <di:waypoint x="1545" y="1180" />
-        <di:waypoint x="1610" y="1180" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_ParaJuncao_di" bpmnElement="F_ParaJuncao">
-        <di:waypoint x="1610" y="1180" />
-        <di:waypoint x="1337.5" y="1180" />
-        <di:waypoint x="1337.5" y="1285" />
-        <di:waypoint x="1065" y="1285" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F05_di" bpmnElement="F05">
-        <di:waypoint x="1015" y="1285" />
-        <di:waypoint x="907.5" y="1285" />
-        <di:waypoint x="907.5" y="1420" />
-        <di:waypoint x="800" y="1420" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_LoopRFs_di" bpmnElement="F_LoopRFs">
-        <di:waypoint x="380" y="1900" />
-        <di:waypoint x="850" y="1900" />
-        <di:waypoint x="850" y="1420" />
-        <di:waypoint x="600" y="1420" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_LoopRFsDoUC_di" bpmnElement="F_LoopRFsDoUC">
-        <di:waypoint x="450" y="3020" />
-        <di:waypoint x="850" y="3020" />
-        <di:waypoint x="850" y="1420" />
-        <di:waypoint x="600" y="1420" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F06_di" bpmnElement="F06">
-        <di:waypoint x="600" y="1420" />
-        <di:waypoint x="525" y="1420" />
-        <di:waypoint x="525" y="1540" />
-        <di:waypoint x="450" y="1540" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F07_di" bpmnElement="F07">
-        <di:waypoint x="360" y="1580" />
-        <di:waypoint x="360" y="1620" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_RFs_Nao_di" bpmnElement="F_RFs_Nao">
-        <di:waypoint x="335" y="1645" />
-        <di:waypoint x="297.5" y="1645" />
-        <di:waypoint x="297.5" y="1765" />
-        <di:waypoint x="260" y="1765" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_RFs_Sim_di" bpmnElement="F_RFs_Sim">
-        <di:waypoint x="360" y="1670" />
-        <di:waypoint x="360" y="1705" />
-        <di:waypoint x="425" y="1705" />
-        <di:waypoint x="425" y="1740" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_AjusteEditar_di" bpmnElement="F_AjusteEditar">
-        <di:waypoint x="235" y="1790" />
-        <di:waypoint x="235" y="1825" />
-        <di:waypoint x="290" y="1825" />
-        <di:waypoint x="290" y="1860" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_AjusteReformular_di" bpmnElement="F_AjusteReformular">
-        <di:waypoint x="235" y="1790" />
-        <di:waypoint x="235" y="1885" />
-        <di:waypoint x="290" y="1885" />
-        <di:waypoint x="290" y="1980" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F08_di" bpmnElement="F08">
-        <di:waypoint x="425" y="1820" />
-        <di:waypoint x="425" y="1840" />
-        <di:waypoint x="440" y="1840" />
-        <di:waypoint x="440" y="1860" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F09_di" bpmnElement="F09">
-        <di:waypoint x="530" y="1900" />
-        <di:waypoint x="905" y="1900" />
-        <di:waypoint x="905" y="2160" />
-        <di:waypoint x="1280" y="2160" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F10_di" bpmnElement="F10">
-        <di:waypoint x="1380" y="2200" />
-        <di:waypoint x="1380" y="2240" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F11_di" bpmnElement="F11">
-        <di:waypoint x="1280" y="2280" />
-        <di:waypoint x="1040" y="2280" />
-        <di:waypoint x="1040" y="2420" />
-        <di:waypoint x="800" y="2420" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_LoopUCs_di" bpmnElement="F_LoopUCs">
-        <di:waypoint x="450" y="2900" />
-        <di:waypoint x="850" y="2900" />
-        <di:waypoint x="850" y="2420" />
-        <di:waypoint x="600" y="2420" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_LoopUCsDeUS_di" bpmnElement="F_LoopUCsDeUS">
-        <di:waypoint x="450" y="4760" />
-        <di:waypoint x="850" y="4760" />
-        <di:waypoint x="850" y="2420" />
-        <di:waypoint x="600" y="2420" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F12_di" bpmnElement="F12">
-        <di:waypoint x="600" y="2420" />
-        <di:waypoint x="525" y="2420" />
-        <di:waypoint x="525" y="2540" />
-        <di:waypoint x="450" y="2540" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F14_di" bpmnElement="F14">
-        <di:waypoint x="530" y="2780" />
-        <di:waypoint x="1070" y="2780" />
-        <di:waypoint x="1070" y="3140" />
-        <di:waypoint x="1610" y="3140" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F15_di" bpmnElement="F15">
-        <di:waypoint x="1610" y="3140" />
-        <di:waypoint x="1210" y="3140" />
-        <di:waypoint x="1210" y="3260" />
-        <di:waypoint x="810" y="3260" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F18_di" bpmnElement="F18">
-        <di:waypoint x="450" y="3620" />
-        <di:waypoint x="690" y="3620" />
-        <di:waypoint x="690" y="3740" />
-        <di:waypoint x="930" y="3740" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F19_di" bpmnElement="F19">
-        <di:waypoint x="1130" y="3740" />
-        <di:waypoint x="1200" y="3740" />
-        <di:waypoint x="1200" y="3880" />
-        <di:waypoint x="1270" y="3880" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_LoopUSRegerar_di" bpmnElement="F_LoopUSRegerar">
-        <di:waypoint x="450" y="4640" />
-        <di:waypoint x="1540" y="4640" />
-        <di:waypoint x="1540" y="3880" />
-        <di:waypoint x="1270" y="3880" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F20_di" bpmnElement="F20">
-        <di:waypoint x="1490" y="3880" />
-        <di:waypoint x="1550" y="3880" />
-        <di:waypoint x="1550" y="4020" />
-        <di:waypoint x="1610" y="4020" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F21_di" bpmnElement="F21">
-        <di:waypoint x="1610" y="4020" />
-        <di:waypoint x="1205" y="4020" />
-        <di:waypoint x="1205" y="4160" />
-        <di:waypoint x="800" y="4160" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F22_di" bpmnElement="F22">
-        <di:waypoint x="600" y="4160" />
-        <di:waypoint x="525" y="4160" />
-        <di:waypoint x="525" y="4280" />
-        <di:waypoint x="450" y="4280" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F23_di" bpmnElement="F23">
-        <di:waypoint x="360" y="4320" />
-        <di:waypoint x="360" y="4360" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_US_Nao_di" bpmnElement="F_US_Nao">
-        <di:waypoint x="335" y="4385" />
-        <di:waypoint x="297.5" y="4385" />
-        <di:waypoint x="297.5" y="4505" />
-        <di:waypoint x="260" y="4505" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_US_Sim_di" bpmnElement="F_US_Sim">
-        <di:waypoint x="360" y="4410" />
-        <di:waypoint x="360" y="4445" />
-        <di:waypoint x="440" y="4445" />
-        <di:waypoint x="440" y="4480" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_USAjusteRegerar_di" bpmnElement="F_USAjusteRegerar">
-        <di:waypoint x="260" y="4505" />
-        <di:waypoint x="265" y="4505" />
-        <di:waypoint x="265" y="4640" />
-        <di:waypoint x="270" y="4640" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_USAjusteVoltar_di" bpmnElement="F_USAjusteVoltar">
-        <di:waypoint x="260" y="4505" />
-        <di:waypoint x="265" y="4505" />
-        <di:waypoint x="265" y="4760" />
-        <di:waypoint x="270" y="4760" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F24_di" bpmnElement="F24">
-        <di:waypoint x="530" y="4520" />
-        <di:waypoint x="1075" y="4520" />
-        <di:waypoint x="1075" y="4800" />
-        <di:waypoint x="1620" y="4800" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F25_di" bpmnElement="F25">
-        <di:waypoint x="1620" y="4800" />
-        <di:waypoint x="1210" y="4800" />
-        <di:waypoint x="1210" y="4940" />
-        <di:waypoint x="800" y="4940" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F26_di" bpmnElement="F26">
-        <di:waypoint x="600" y="4940" />
-        <di:waypoint x="525" y="4940" />
-        <di:waypoint x="525" y="5080" />
-        <di:waypoint x="450" y="5080" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F27_di" bpmnElement="F27">
-        <di:waypoint x="360" y="5120" />
-        <di:waypoint x="360" y="5160" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_UCs_Nao_di" bpmnElement="F_UCs_Nao">
-        <di:waypoint x="335" y="2645" />
-        <di:waypoint x="297.5" y="2645" />
-        <di:waypoint x="297.5" y="2765" />
-        <di:waypoint x="260" y="2765" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_UC_Editar_di" bpmnElement="F_UC_Editar">
-        <di:waypoint x="260" y="2765" />
-        <di:waypoint x="265" y="2765" />
-        <di:waypoint x="265" y="2900" />
-        <di:waypoint x="270" y="2900" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_UC_Voltar_di" bpmnElement="F_UC_Voltar">
-        <di:waypoint x="260" y="2765" />
-        <di:waypoint x="265" y="2765" />
-        <di:waypoint x="265" y="3020" />
-        <di:waypoint x="270" y="3020" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F13_di" bpmnElement="F13">
-        <di:waypoint x="360" y="2580" />
-        <di:waypoint x="360" y="2620" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_UCs_Sim_di" bpmnElement="F_UCs_Sim">
-        <di:waypoint x="360" y="2670" />
-        <di:waypoint x="360" y="2705" />
-        <di:waypoint x="440" y="2705" />
-        <di:waypoint x="440" y="2740" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_Diag_Nao_di" bpmnElement="F_Diag_Nao">
-        <di:waypoint x="385" y="3485" />
-        <di:waypoint x="500" y="3485" />
-        <di:waypoint x="500" y="2900" />
-        <di:waypoint x="270" y="2900" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F16_di" bpmnElement="F16">
-        <di:waypoint x="590" y="3260" />
-        <di:waypoint x="520" y="3260" />
-        <di:waypoint x="520" y="3380" />
-        <di:waypoint x="450" y="3380" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F17_di" bpmnElement="F17">
-        <di:waypoint x="360" y="3420" />
-        <di:waypoint x="360" y="3460" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="F_Diag_Sim_di" bpmnElement="F_Diag_Sim">
-        <di:waypoint x="360" y="3510" />
-        <di:waypoint x="360" y="3580" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="A_Leg1_di" bpmnElement="A_Leg1">
-        <di:waypoint x="980" y="5330" />
-        <di:waypoint x="1010" y="5345" />
-      </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram>
+    <bpmndi:BPMNPlane bpmnElement="Sub_ExtrairRFsIA" />
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram>
+    <bpmndi:BPMNPlane bpmnElement="Sub_GerarUCsIA" />
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram>
+    <bpmndi:BPMNPlane bpmnElement="Sub_GerarUSIA" />
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>
