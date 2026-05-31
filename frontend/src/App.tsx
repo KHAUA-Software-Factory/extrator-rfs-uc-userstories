@@ -149,7 +149,11 @@ function getStatusLabel(statusText: string | undefined) {
 }
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  if (/failed to fetch|load failed|network error|NetworkError/i.test(message)) {
+    return 'Falha de rede ao chamar a OpenAI. Verifique conexão, CORS, endpoint e a chave da API.';
+  }
+  return message;
 }
 
 function getSessionKey(session: Pick<SessionLoaded, 'uid' | 'id'> | null) {

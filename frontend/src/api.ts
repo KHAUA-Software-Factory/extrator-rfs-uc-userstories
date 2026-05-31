@@ -153,30 +153,56 @@ async function callOpenAiJson<T>({
     },
   });
 
-  const response = await fetch(OPENAI_RESPONSES_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${getOpenAiKey()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      input: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent },
-      ],
-      text: {
-        format: {
-          type: 'json_schema',
-          name: schemaName,
-          strict: true,
-          schema,
-        },
+  let response: Response;
+  try {
+    response = await fetch(OPENAI_RESPONSES_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getOpenAiKey()}`,
+        'Content-Type': 'application/json',
       },
-    }),
-  });
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        input: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+        text: {
+          format: {
+            type: 'json_schema',
+            name: schemaName,
+            strict: true,
+            schema,
+          },
+        },
+      }),
+    });
+  } catch (error) {
+    const networkError = new Error(
+      'Falha de rede ao chamar a OpenAI. Verifique conexão, CORS, endpoint e chave da API.',
+    );
+    logError('ai.request.network_error', error, {
+      schemaName,
+      model: OPENAI_MODEL,
+      baseUrl: OPENAI_BASE_URL,
+    });
+    throw networkError;
+  }
 
-  const rawText = await response.text();
+  let rawText = '';
+  try {
+    rawText = await response.text();
+  } catch (error) {
+    const networkError = new Error(
+      'Falha ao ler a resposta da OpenAI. Verifique conexão e endpoint.',
+    );
+    logError('ai.request.read_failed', error, {
+      schemaName,
+      model: OPENAI_MODEL,
+      status: response.status,
+    });
+    throw networkError;
+  }
   const data = rawText ? (JSON.parse(rawText) as OpenAiResponse) : {};
 
   if (!response.ok) {
