@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 
 import { auth, db } from '../../../firebase';
+import { logError, logEvent } from '../../../lib/logger';
 import type { SessionDoc, SessionListItem, SessionLoaded } from '../model/types';
 
 const SESSION_FIELDS = [
@@ -27,6 +28,7 @@ const SESSION_FIELDS = [
   'diagramModelText',
   'userStoriesText',
   'statusText',
+  'requirementsLanguage',
 ] as const satisfies readonly (keyof SessionDoc)[];
 
 const GENERIC_TITLES = new Set([
@@ -57,6 +59,7 @@ function sessionDefaults(): SessionDoc {
     diagramModelText: '',
     userStoriesText: '',
     statusText: 'draft',
+    requirementsLanguage: 'pt-BR',
     createdAtText: now,
     updatedAtText: now,
   };
@@ -139,6 +142,7 @@ function mapLoadedSession(uid: string, id: string, data: DocumentData): SessionL
     diagramModelText: readString(data, 'diagramModelText'),
     userStoriesText: readString(data, 'userStoriesText'),
     statusText: readString(data, 'statusText'),
+    requirementsLanguage: readString(data, 'requirementsLanguage') || 'pt-BR',
     createdAtText: readString(data, 'createdAtText'),
     updatedAtText: readString(data, 'updatedAtText'),
   };
@@ -160,18 +164,47 @@ function sortByUpdatedAtDesc(left: SessionListItem, right: SessionListItem) {
 
 export async function createSession(): Promise<{ id: string; uid: string }> {
   const user = requireCurrentUser();
-  const ref = await addDoc(sessionsCollection(user.uid), sessionDefaults());
-  return { id: ref.id, uid: user.uid };
+  logEvent({ event: 'session.create.started', persist: true, details: { uid: user.uid } });
+
+  try {
+    const ref = await addDoc(sessionsCollection(user.uid), sessionDefaults());
+    logEvent({
+      event: 'session.create.succeeded',
+      persist: true,
+      details: { uid: user.uid, id: ref.id },
+    });
+    return { id: ref.id, uid: user.uid };
+  } catch (error) {
+    logError('session.create.failed', error, { uid: user.uid });
+    throw error;
+  }
 }
 
 export async function loadSession(uid: string, sessionId: string): Promise<SessionLoaded> {
-  const snapshot = await getDoc(sessionDocument(uid, sessionId));
-  if (!snapshot.exists()) throw new Error('Sessao nao encontrada.');
-  return mapLoadedSession(uid, snapshot.id, snapshot.data());
+  logEvent({ event: 'session.load.started', details: { uid, sessionId } });
+
+  try {
+    const snapshot = await getDoc(sessionDocument(uid, sessionId));
+    if (!snapshot.exists()) {
+      const error = new Error('Sessao nao encontrada.');
+      logError('session.load.not_found', error, { uid, sessionId });
+      throw error;
+    }
+
+    const loaded = mapLoadedSession(uid, snapshot.id, snapshot.data());
+    logEvent({ event: 'session.load.succeeded', details: { uid, sessionId } });
+    return loaded;
+  } catch (error) {
+    if (!(error instanceof Error && error.message === 'Sessao nao encontrada.')) {
+      logError('session.load.failed', error, { uid, sessionId });
+    }
+    throw error;
+  }
 }
 
 export async function loadMySession(sessionId: string): Promise<SessionLoaded> {
   const user = requireCurrentUser();
+  logEvent({ event: 'session.load_my.started', details: { uid: user.uid, sessionId } });
   return loadSession(user.uid, sessionId);
 }
 
@@ -184,11 +217,33 @@ export async function updateSession(
     ...sanitizeSessionPatch(patch),
     updatedAtText: nowText(),
   };
-  await updateDoc(sessionDocument(uid, sessionId), payload);
+  logEvent({
+    event: 'session.update.started',
+    persist: true,
+    details: { uid, sessionId, fields: Object.keys(payload) },
+  });
+  try {
+    await updateDoc(sessionDocument(uid, sessionId), payload);
+    logEvent({ event: 'session.update.succeeded', persist: true, details: { uid, sessionId } });
+  } catch (error) {
+    logError('session.update.failed', error, { uid, sessionId });
+    throw error;
+  }
 }
 
 export async function deleteSession(uid: string, sessionId: string): Promise<void> {
-  await deleteDoc(sessionDocument(uid, sessionId));
+  logEvent({ event: 'session.delete.started', persist: true, details: { uid, sessionId } });
+  try {
+    await deleteDoc(sessionDocument(uid, sessionId));
+    logEvent({
+      event: 'session.delete.succeeded',
+      persist: true,
+      details: { uid, sessionId },
+    });
+  } catch (error) {
+    logError('session.delete.failed', error, { uid, sessionId });
+    throw error;
+  }
 }
 
 export async function updateMySession(
@@ -201,13 +256,33 @@ export async function updateMySession(
 
 export async function listMySessions(): Promise<SessionListItem[]> {
   const user = requireCurrentUser();
-  const snapshot = await getDocs(
-    query(sessionsCollection(user.uid), orderBy('updatedAtText', 'desc')),
-  );
-  return snapshot.docs.map((item) => mapSessionListItem(item, user.uid));
+  logEvent({ event: 'session.list_my.started', details: { uid: user.uid } });
+  try {
+    const snapshot = await getDocs(
+      query(sessionsCollection(user.uid), orderBy('updatedAtText', 'desc')),
+    );
+    const items = snapshot.docs.map((item) => mapSessionListItem(item, user.uid));
+    logEvent({
+      event: 'session.list_my.succeeded',
+      persist: true,
+      details: { uid: user.uid, count: items.length },
+    });
+    return items;
+  } catch (error) {
+    logError('session.list_my.failed', error, { uid: user.uid });
+    throw error;
+  }
 }
 
 export async function listAllSessionsAsAdmin(): Promise<SessionListItem[]> {
-  const snapshot = await getDocs(collectionGroup(db, 'sessions'));
-  return snapshot.docs.map((item) => mapSessionListItem(item, '')).sort(sortByUpdatedAtDesc);
+  logEvent({ event: 'session.list_all.started' });
+  try {
+    const snapshot = await getDocs(collectionGroup(db, 'sessions'));
+    const items = snapshot.docs.map((item) => mapSessionListItem(item, '')).sort(sortByUpdatedAtDesc);
+    logEvent({ event: 'session.list_all.succeeded', persist: true, details: { count: items.length } });
+    return items;
+  } catch (error) {
+    logError('session.list_all.failed', error);
+    throw error;
+  }
 }

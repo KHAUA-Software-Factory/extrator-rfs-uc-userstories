@@ -40,8 +40,22 @@ service cloud.firestore {
       return hasAdminAccess() || hasUserAccess();
     }
 
+    function isAuditLogAuthor() {
+      return isSignedIn()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.actorEmail == request.auth.token.email
+        && request.resource.data.source == 'client';
+    }
+
     function isOwner(uid) {
       return isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /auditLogs/{logId} {
+      // Auditoria append-only. Usuarios autenticados registram eventos; apenas admin pode ler.
+      allow create: if hasAnyAccess() && isAuditLogAuthor();
+      allow read: if hasAdminAccess();
+      allow update, delete: if false;
     }
 
     match /userAccess/{email} {

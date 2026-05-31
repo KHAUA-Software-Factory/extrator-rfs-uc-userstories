@@ -1,12 +1,14 @@
 import type { FunctionalRequirement, UseCase, UserStory } from './features/analysis/model/types';
 import {
-  EXTRACT_REQUIREMENTS_SYSTEM_PROMPT,
-  GENERATE_UML_SYSTEM_PROMPT,
-  GENERATE_USE_CASES_SYSTEM_PROMPT,
-  GENERATE_USER_STORIES_SYSTEM_PROMPT,
+  buildExtractRequirementsSystemPrompt,
+  buildGenerateUmlSystemPrompt,
+  buildGenerateUseCasesSystemPrompt,
+  buildGenerateUserStoriesSystemPrompt,
   buildProjectScopedUserContent,
   type AiProjectScope,
 } from './features/analysis/prompts';
+import { getRequirementPriorityValue, type RequirementLanguage } from './features/analysis/model/language';
+import { logError, logEvent } from './lib/logger';
 
 export type { FunctionalRequirement, UseCase, UserStory };
 
@@ -140,6 +142,17 @@ async function callOpenAiJson<T>({
   systemPrompt: string;
   userContent: string;
 }): Promise<T> {
+  const startedAt = performance.now();
+  logEvent({
+    event: 'ai.request.started',
+    details: {
+      schemaName,
+      model: OPENAI_MODEL,
+      baseUrl: OPENAI_BASE_URL,
+      userContentLength: userContent.length,
+    },
+  });
+
   const response = await fetch(OPENAI_RESPONSES_URL, {
     method: 'POST',
     headers: {
@@ -167,20 +180,36 @@ async function callOpenAiJson<T>({
   const data = rawText ? (JSON.parse(rawText) as OpenAiResponse) : {};
 
   if (!response.ok) {
-    throw new Error(data.error?.message || `OpenAI API respondeu com status ${response.status}.`);
+    const error = new Error(data.error?.message || `OpenAI API respondeu com status ${response.status}.`);
+    logError('ai.request.failed', error, {
+      schemaName,
+      model: OPENAI_MODEL,
+      status: response.status,
+    });
+    throw error;
   }
 
   const output = readOpenAiOutput(data);
-  if (!output) throw new Error('OpenAI retornou uma resposta vazia.');
+  if (!output) {
+    const error = new Error('OpenAI retornou uma resposta vazia.');
+    logError('ai.request.empty_output', error, { schemaName, model: OPENAI_MODEL });
+    throw error;
+  }
+
+  logEvent({
+    event: 'ai.request.succeeded',
+    details: {
+      schemaName,
+      model: OPENAI_MODEL,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      outputLength: output.length,
+    },
+  });
   return parseJsonText<T>(output);
 }
 
 function normalizePriority(value: unknown): FunctionalRequirement['prioridade'] {
-  const text = String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-  if (text === 'Alta' || text === 'Baixa') return text;
-  return 'Media';
+  return getRequirementPriorityValue(String(value || ''));
 }
 
 function normalizeRequirement(
@@ -233,9 +262,19 @@ function normalizeUserStory(story: Partial<UserStory>, index: number): UserStory
 
 export async function extractRequirements(input: AiProjectScopedInput & {
   text: string;
+  language: RequirementLanguage;
 }): Promise<{ requisitos_funcionais: FunctionalRequirement[] }> {
   const text = input.text.trim();
-  if (!text) throw new Error('Informe a descricao do sistema antes de chamar a IA.');
+  if (!text) {
+    const error = new Error('Informe a descricao do sistema antes de chamar a IA.');
+    logError('ai.extract_requirements.invalid_input', error);
+    throw error;
+  }
+
+  logEvent({
+    event: 'ai.extract_requirements.started',
+    details: { language: input.language, textLength: text.length },
+  });
 
   const result = await callOpenAiJson<{ requisitos_funcionais: Partial<FunctionalRequirement>[] }>({
     schemaName: 'extracao_requisitos_funcionais',
@@ -247,11 +286,14 @@ export async function extractRequirements(input: AiProjectScopedInput & {
         requisitos_funcionais: { type: 'array', items: requirementSchema },
       },
     },
-    systemPrompt: EXTRACT_REQUIREMENTS_SYSTEM_PROMPT,
+    systemPrompt: buildExtractRequirementsSystemPrompt(input.language),
     userContent: buildProjectScopedUserContent({
       project: input.project,
       step: 'extract_requirements',
-      payload: { description_text: text },
+      payload: {
+        description_text: text,
+        target_language: input.language,
+      },
     }),
   });
 
@@ -262,7 +304,14 @@ export async function extractRequirements(input: AiProjectScopedInput & {
 
 export async function generateUseCases(input: AiProjectScopedInput & {
   requisitos_funcionais: FunctionalRequirement[];
+  language: RequirementLanguage;
 }): Promise<{ casos_de_uso: UseCase[] }> {
+  if (!input.requisitos_funcionais.length) {
+    const error = new Error('Informe requisitos antes de gerar casos de uso.');
+    logError('ai.generate_use_cases.invalid_input', error);
+    throw error;
+  }
+
   const result = await callOpenAiJson<{ casos_de_uso: Partial<UseCase>[] }>({
     schemaName: 'geracao_casos_de_uso',
     schema: {
@@ -273,11 +322,14 @@ export async function generateUseCases(input: AiProjectScopedInput & {
         casos_de_uso: { type: 'array', items: useCaseSchema },
       },
     },
-    systemPrompt: GENERATE_USE_CASES_SYSTEM_PROMPT,
+    systemPrompt: buildGenerateUseCasesSystemPrompt(input.language),
     userContent: buildProjectScopedUserContent({
       project: input.project,
       step: 'generate_use_cases',
-      payload: { requisitos_funcionais: input.requisitos_funcionais },
+      payload: {
+        requisitos_funcionais: input.requisitos_funcionais,
+        target_language: input.language,
+      },
     }),
   });
 
@@ -290,7 +342,14 @@ export async function generateUml(input: AiProjectScopedInput & {
   systemName?: string;
   requisitos_funcionais?: FunctionalRequirement[];
   casos_de_uso?: UseCase[];
+  language: RequirementLanguage;
 }): Promise<{ plantuml: string }> {
+  if (!input.casos_de_uso?.length) {
+    const error = new Error('Informe casos de uso antes de gerar PlantUML.');
+    logError('ai.generate_uml.invalid_input', error);
+    throw error;
+  }
+
   const result = await callOpenAiJson<{ plantuml: string }>({
     schemaName: 'geracao_plantuml_usecase',
     schema: {
@@ -301,7 +360,7 @@ export async function generateUml(input: AiProjectScopedInput & {
         plantuml: { type: 'string' },
       },
     },
-    systemPrompt: GENERATE_UML_SYSTEM_PROMPT,
+    systemPrompt: buildGenerateUmlSystemPrompt(input.language),
     userContent: buildProjectScopedUserContent({
       project: input.project,
       step: 'generate_uml',
@@ -309,6 +368,7 @@ export async function generateUml(input: AiProjectScopedInput & {
         systemName: input.systemName,
         requisitos_funcionais: input.requisitos_funcionais,
         casos_de_uso: input.casos_de_uso,
+        target_language: input.language,
       },
     }),
   });
@@ -322,9 +382,14 @@ export async function generateUml(input: AiProjectScopedInput & {
 
 export async function generateUserStories(input: AiProjectScopedInput & {
   plantuml: string;
+  language: RequirementLanguage;
 }): Promise<{ user_stories: UserStory[] }> {
   const plantuml = input.plantuml.trim();
-  if (!plantuml) throw new Error('Valide ou informe o PlantUML antes de chamar a IA.');
+  if (!plantuml) {
+    const error = new Error('Valide ou informe o PlantUML antes de chamar a IA.');
+    logError('ai.generate_user_stories.invalid_input', error);
+    throw error;
+  }
 
   const result = await callOpenAiJson<{ user_stories: Partial<UserStory>[] }>({
     schemaName: 'geracao_user_stories',
@@ -336,11 +401,11 @@ export async function generateUserStories(input: AiProjectScopedInput & {
         user_stories: { type: 'array', items: userStorySchema },
       },
     },
-    systemPrompt: GENERATE_USER_STORIES_SYSTEM_PROMPT,
+    systemPrompt: buildGenerateUserStoriesSystemPrompt(input.language),
     userContent: buildProjectScopedUserContent({
       project: input.project,
       step: 'generate_user_stories',
-      payload: { plantuml },
+      payload: { plantuml, target_language: input.language },
     }),
   });
 

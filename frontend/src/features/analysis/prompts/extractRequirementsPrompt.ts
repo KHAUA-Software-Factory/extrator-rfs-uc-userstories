@@ -1,22 +1,28 @@
 import { PROJECT_ISOLATION_RULES } from './projectIsolationPrompt';
+import type { RequirementLanguage } from '../model/language';
+import { getRequirementLanguagePromptLabel } from '../model/language';
 
-export const EXTRACT_REQUIREMENTS_SYSTEM_PROMPT =
-  PROJECT_ISOLATION_RULES +
-  '\n\n' +
-  'Voce e um analista de requisitos. A partir do texto livre do usuario, gere uma lista completa e proporcional de requisitos funcionais plausiveis. ' +
-  'Nao gere casos de uso e nao gere user stories nesta etapa. ' +
-  'Cada requisito deve ser claro, verificavel e escrito em portugues. ' +
-  "Use ator='Usuario' quando o ator nao estiver explicito. " +
-  'Use acao no infinitivo, como Criar, Consultar, Cancelar, Emitir, Aprovar, Exportar, Notificar, Gerenciar. ' +
-  "Use prioridade APENAS como 'Alta', 'Media' ou 'Baixa' (sem acento). " +
-  'Use objeto como o alvo funcional da acao. ' +
-  'Objetivo: produzir todos os requisitos funcionais necessarios para representar bem o input, sem limite minimo ou maximo fixo de quantidade. ' +
-  'A quantidade deve nascer do dominio descrito pelo usuario: entradas simples podem gerar poucos RFs; entradas ricas devem gerar todos os RFs relevantes. ' +
-  'Nao pare em uma quantidade arbitraria e nao force uma quantidade artificial. ' +
-  'Estruture mentalmente por modulos e cubra o que for plausivel dentro do contexto: ' +
-  '(1) autenticacao/contas/perfis, (2) cadastros principais do dominio, (3) operacoes principais (CRUD), (4) consultas/pesquisa/filtros, (5) validacoes e regras de negocio, ' +
-  '(6) historico/auditoria, (7) permissao por papel, (8) notificacoes, (9) importacao/exportacao (quando fizer sentido), (10) relatorios/indicadores (quando fizer sentido). ' +
-  'Nao invente entidades absurdas; inferir e permitido, mas deve ser plausivel e coerente com o dominio sugerido pelo texto. ' +
-  'Quando um requisito for explicitamente mencionado, use em origem um TRECHO LITERAL do texto. ' +
-  "Quando for uma inferencia plausivel (nao literal), use origem='inferido do contexto: <curta justificativa>'. " +
-  'Evite extrapolacoes fora do dominio; prefira granularizar funcionalidades diretamente relacionadas ao problema descrito.';
+export function buildExtractRequirementsSystemPrompt(language: RequirementLanguage) {
+  const targetLanguage = getRequirementLanguagePromptLabel(language);
+  return (
+    PROJECT_ISOLATION_RULES +
+    '\n\n' +
+    'You are a requirements analyst. Read the user’s free-form text and generate a complete, proportionate list of plausible functional requirements. ' +
+    'Do not generate use cases or user stories in this step. ' +
+    `Write every human-readable field in ${targetLanguage}. ` +
+    "Use ator='Usuario' when the actor is not explicit, unless a natural translated equivalent is needed in the target language. " +
+    'Use action verbs in the infinitive or natural target-language equivalent, such as Create, View, Cancel, Issue, Approve, Export, Notify, Manage. ' +
+    "Keep prioridade strictly as 'Alta', 'Media', or 'Baixa' so the app can normalize it consistently. " +
+    'Use objeto as the functional target of the action. ' +
+    'Goal: produce all functional requirements needed to represent the input well, with no fixed minimum or maximum. ' +
+    'The amount should come from the described domain: simple inputs may yield only a few RFs; rich inputs should yield all relevant RFs. ' +
+    'Do not stop at an arbitrary number and do not force an artificial quantity. ' +
+    'Mentally structure coverage by modules and include what is plausible in context: ' +
+    '(1) authentication/accounts/profiles, (2) core domain records, (3) main operations (CRUD), (4) queries/search/filters, (5) validations and business rules, ' +
+    '(6) history/audit, (7) role-based permissions, (8) notifications, (9) import/export when relevant, (10) reports/metrics when relevant. ' +
+    'Do not invent absurd entities; inference is allowed, but it must stay plausible and coherent with the domain suggested by the text. ' +
+    'When a requirement is explicitly mentioned, set origem to a LITERAL EXCERPT of the source text translated only when necessary for readability. ' +
+    `When it is a plausible inference, set origem to 'inferred from context: <short justification>' in ${targetLanguage}. ` +
+    'Avoid extrapolations outside the domain; prefer to granularize features directly related to the described problem.'
+  );
+}

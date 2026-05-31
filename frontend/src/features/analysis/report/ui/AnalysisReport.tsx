@@ -1,4 +1,5 @@
 import type { DiagramModel } from '../../../../plantumlBridge';
+import { getRequirementPriorityLabel, type RequirementLanguage } from '../../model/language';
 import type { FunctionalRequirement, UseCase, UserStory } from '../../model/types';
 
 type Props = {
@@ -9,6 +10,7 @@ type Props = {
   useCases: UseCase[];
   diagram: DiagramModel | null;
   userStories: UserStory[];
+  language: RequirementLanguage;
 };
 
 type NodeBox = {
@@ -27,8 +29,16 @@ const USE_CASE_WIDTH = 248;
 const USE_CASE_HEIGHT = 66;
 
 export function AnalysisReport(props: Props) {
-  const { title, statusLabel, descriptionText, requirements, useCases, diagram, userStories } =
-    props;
+  const {
+    title,
+    statusLabel,
+    descriptionText,
+    requirements,
+    useCases,
+    diagram,
+    userStories,
+    language,
+  } = props;
 
   return (
     <section className="print-report" aria-label="Relatorio da analise">
@@ -65,7 +75,7 @@ export function AnalysisReport(props: Props) {
                 <td>{requirement.id}</td>
                 <td>{requirement.descricao}</td>
                 <td>{requirement.ator}</td>
-                <td>{requirement.prioridade}</td>
+                <td>{getRequirementPriorityLabel(requirement.prioridade, language)}</td>
               </tr>
             ))}
           </tbody>

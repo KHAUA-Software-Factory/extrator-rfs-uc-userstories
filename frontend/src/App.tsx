@@ -47,11 +47,13 @@ import {
   type SessionLoaded,
 } from './sessions';
 import {
-  getMyAccessUser,
   listAccessUsers,
   removeAccessUser,
+  watchMyAccessUser,
   saveAccessUser,
 } from './features/access/api/accessRepo';
+import { type RequirementLanguage } from './features/analysis/model/language';
+import { logError, logEvent } from './lib/logger';
 import type { AccessRole, AccessUser } from './features/access/model/types';
 import {
   ReactFlow,
@@ -766,6 +768,7 @@ function App() {
   const [phase, setPhase] = useState<PhaseId>(1);
   const [descriptionText, setDescriptionText] = useState('');
   const [requirements, setRequirements] = useState<FunctionalRequirement[]>([]);
+  const [requirementsLanguage, setRequirementsLanguage] = useState<RequirementLanguage>('pt-BR');
   const [extracting, setExtracting] = useState(false);
   const [useCases, setUseCases] = useState<UseCase[]>([]);
   const [generatingUseCases, setGeneratingUseCases] = useState(false);
@@ -908,6 +911,11 @@ function App() {
       (u) => {
         authStateResolved = true;
         window.clearTimeout(fallbackTimer);
+        logEvent({
+          event: 'auth.state.changed',
+          persist: true,
+          details: { signedIn: Boolean(u), uid: u?.uid || '', email: u?.email || '' },
+        });
         setUser(u);
         setLoading(false);
         if (u) {
@@ -918,6 +926,7 @@ function App() {
           setActiveSession(null);
           setDescriptionText('');
           setRequirements([]);
+          setRequirementsLanguage('pt-BR');
           setUseCases([]);
           setPlantuml('');
           setDiagram(null);
@@ -929,11 +938,13 @@ function App() {
           setSessions([]);
           setAccessUsers([]);
           setActiveSession(null);
+          setRequirementsLanguage('pt-BR');
         }
       },
       (authError) => {
         authStateResolved = true;
         window.clearTimeout(fallbackTimer);
+        logError('auth.state.failed', authError);
         setError(`Falha ao inicializar o login: ${authError.message}`);
         setLoading(false);
       },
@@ -948,24 +959,39 @@ function App() {
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    (async () => {
-      try {
-        const accessUser = await getMyAccessUser();
-        if (!cancelled) {
-          setAccessRole(accessUser?.role || null);
-          setIsAdmin(accessUser?.role === 'admin');
-          if (!accessUser) {
-            setError('Seu Gmail ainda não está cadastrado na gestão de usuários.');
-          }
+    const unsubscribe = watchMyAccessUser(
+      (accessUser) => {
+        if (cancelled) return;
+
+        setAccessRole(accessUser?.role || null);
+        setIsAdmin(accessUser?.role === 'admin');
+
+        if (!accessUser) {
+          logEvent({
+            event: 'access.revoked',
+            level: 'warn',
+            persist: true,
+            details: { email: user?.email || '', uid: user?.uid || '' },
+          });
+          clearDiagramAutosaveTimer();
+          setSessions([]);
+          setAccessUsers([]);
+          setActiveSession(null);
+          setActiveView('dashboard');
+          setPhase(1);
+          setError('Seu acesso foi removido. Entre novamente.');
+          void signOut(auth);
         }
-      } catch (e) {
-        if (!cancelled) setError(getErrorMessage(e));
-      }
-    })();
+      },
+      (accessError) => {
+        if (!cancelled) setError(getErrorMessage(accessError));
+      },
+    );
     return () => {
       cancelled = true;
+      unsubscribe();
     };
-  }, [user]);
+  }, [user, clearDiagramAutosaveTimer]);
 
   useEffect(() => {
     if (!user) {
@@ -1078,9 +1104,12 @@ function App() {
   async function handleLogin() {
     setError('');
     showProcessing('Autenticando usuário', 'Abrindo o login do Google.', 1, 1);
+    logEvent({ event: 'auth.login.started', persist: true });
     try {
       await signInWithPopup(auth, googleProvider);
+      logEvent({ event: 'auth.login.succeeded', persist: true });
     } catch (e) {
+      logError('auth.login.failed', e);
       setError(getErrorMessage(e));
     } finally {
       setProcessing(null);
@@ -1091,9 +1120,12 @@ function App() {
     clearDiagramAutosaveTimer();
     setError('');
     showProcessing('Encerrando sessão', 'Saindo da conta atual.', 1, 1);
+    logEvent({ event: 'auth.logout.started', persist: true });
     try {
       await signOut(auth);
+      logEvent({ event: 'auth.logout.succeeded', persist: true });
     } catch (e) {
+      logError('auth.logout.failed', e);
       setError(getErrorMessage(e));
     } finally {
       setProcessing(null);
@@ -1116,6 +1148,10 @@ function App() {
   async function handleSaveAccessUser() {
     setError('');
     showProcessing('Salvando acesso', 'Atualizando nível do Gmail informado.', 1, 2);
+    logEvent({
+      event: 'ui.access.save.requested',
+      details: { email: accessEmail, role: accessRoleDraft },
+    });
     try {
       await saveAccessUser(accessEmail, accessRoleDraft);
       setAccessEmail('');
@@ -1123,6 +1159,7 @@ function App() {
       showProcessing('Salvando acesso', 'Recarregando usuários cadastrados.', 2, 2);
       await refreshAccessUsers();
     } catch (e) {
+      logError('ui.access.save.failed', e, { email: accessEmail, role: accessRoleDraft });
       setError(getErrorMessage(e));
     } finally {
       setProcessing(null);
@@ -1132,11 +1169,13 @@ function App() {
   async function handleChangeAccessUserRole(email: string, role: AccessRole) {
     setError('');
     showProcessing('Editando acesso', 'Atualizando nível do Gmail selecionado.', 1, 2);
+    logEvent({ event: 'ui.access.role_change.requested', details: { email, role } });
     try {
       await saveAccessUser(email, role);
       showProcessing('Editando acesso', 'Recarregando usuários cadastrados.', 2, 2);
       await refreshAccessUsers();
     } catch (e) {
+      logError('ui.access.role_change.failed', e, { email, role });
       setError(getErrorMessage(e));
     } finally {
       setProcessing(null);
@@ -1146,11 +1185,13 @@ function App() {
   async function handleRemoveAccessUser(email: string) {
     setError('');
     showProcessing('Removendo acesso', 'Excluindo Gmail da gestão de usuários.', 1, 2);
+    logEvent({ event: 'ui.access.remove.requested', details: { email } });
     try {
       await removeAccessUser(email);
       showProcessing('Removendo acesso', 'Recarregando usuários cadastrados.', 2, 2);
       await refreshAccessUsers();
     } catch (e) {
+      logError('ui.access.remove.failed', e, { email });
       setError(getErrorMessage(e));
     } finally {
       setProcessing(null);
@@ -1170,6 +1211,7 @@ function App() {
       setSidebarOpen(false);
       setPhase(1);
       setDescriptionText(loaded.descriptionText || '');
+      setRequirementsLanguage((loaded.requirementsLanguage as RequirementLanguage) || 'pt-BR');
       setRequirements([]);
       setUseCases([]);
       setPlantuml('');
@@ -1208,6 +1250,7 @@ function App() {
       setActiveView('workspace');
       setSidebarOpen(false);
       setDescriptionText(loaded.descriptionText || '');
+      setRequirementsLanguage((loaded.requirementsLanguage as RequirementLanguage) || 'pt-BR');
       setRequirements(loaded.requirementsText ? JSON.parse(loaded.requirementsText) : []);
       setUseCases(loaded.useCasesText ? JSON.parse(loaded.useCasesText).map(normalizeUseCase) : []);
       setPlantuml(loadedPlantuml);
@@ -1375,6 +1418,20 @@ function App() {
     handleChangeUserStories(userStories.filter((_, idx) => idx !== index));
   }
 
+  function handleChangeRequirementsLanguage(nextLanguage: RequirementLanguage) {
+    setRequirementsLanguage(nextLanguage);
+    logEvent({
+      event: 'ui.requirements.language_changed',
+      details: { language: nextLanguage },
+    });
+    if (activeSession) {
+      void updateSession(activeSession.uid, activeSession.id, {
+        requirementsLanguage: nextLanguage,
+      });
+      setActiveSession({ ...activeSession, requirementsLanguage: nextLanguage });
+    }
+  }
+
   async function handleExtractRequirements() {
     const session = activeSession;
     if (!session) return;
@@ -1394,7 +1451,11 @@ function App() {
         2,
         4,
       );
-      const result = await extractRequirements({ text: sourceDescription, project });
+      const result = await extractRequirements({
+        text: sourceDescription,
+        project,
+        language: requirementsLanguage,
+      });
       if (!isCurrentSession(session)) return;
       showProcessing('Etapa 1: requisitos funcionais', 'Organizando requisitos retornados.', 3, 4);
       setRequirements(result.requisitos_funcionais);
@@ -1407,6 +1468,7 @@ function App() {
       await updateSession(session.uid, session.id, {
         title: nextTitle,
         descriptionText: sourceDescription,
+        requirementsLanguage,
         requirementsText,
         useCasesText: '',
         plantumlText: '',
@@ -1419,6 +1481,7 @@ function App() {
         ...session,
         title: nextTitle,
         descriptionText: sourceDescription,
+        requirementsLanguage,
         requirementsText,
         useCasesText: '',
         plantumlText: '',
@@ -1486,6 +1549,7 @@ function App() {
       const result = await generateUseCases({
         requisitos_funcionais: sourceRequirements,
         project,
+        language: session.requirementsLanguage as RequirementLanguage,
       });
       if (!isCurrentSession(session)) return;
       showProcessing('Etapa 2: casos de uso', 'Normalizando casos de uso e relações.', 2, 4);
@@ -1696,7 +1760,11 @@ function App() {
           : '';
       if (!sourcePlantuml) throw new Error('missing_plantuml');
       showProcessing('Etapa 4: user stories', 'Gerando user stories e critérios de aceite.', 2, 4);
-      const result = await generateUserStories({ plantuml: sourcePlantuml, project });
+      const result = await generateUserStories({
+        plantuml: sourcePlantuml,
+        project,
+        language: session.requirementsLanguage as RequirementLanguage,
+      });
       if (!isCurrentSession(session)) return;
       showProcessing('Etapa 4: user stories', 'Organizando histórias retornadas.', 3, 4);
       setUserStories(result.user_stories);
@@ -1730,6 +1798,7 @@ function App() {
         useCases,
         diagram,
         userStories,
+        language: (activeSession.requirementsLanguage as RequirementLanguage) || 'pt-BR',
         filename: `${slugFileName(activeSession.title || 'relatorio')}.pdf`,
       });
     } catch (e) {
@@ -1763,6 +1832,7 @@ function App() {
         useCases: loadedUseCases,
         diagram: await prepareDiagramForEditor(loaded),
         userStories: loadedUserStories,
+        language: (loaded.requirementsLanguage as RequirementLanguage) || 'pt-BR',
         filename: `${slugFileName(loaded.title || item.title || 'relatorio')}.pdf`,
       });
     } catch (e) {
@@ -2356,7 +2426,9 @@ function App() {
                     descriptionText={descriptionText}
                     extracting={extracting}
                     requirements={requirements}
+                    language={requirementsLanguage}
                     onChangeDescription={setDescriptionText}
+                    onChangeLanguage={handleChangeRequirementsLanguage}
                     onSaveDescription={handleSaveDescription}
                     onExtract={handleExtractRequirements}
                     onValidate={handleValidateRequirements}
@@ -2765,6 +2837,7 @@ function App() {
                     useCases={useCases}
                     diagram={diagram}
                     userStories={userStories}
+                    language={(activeSession.requirementsLanguage as RequirementLanguage) || 'pt-BR'}
                   />
                 </section>
               ) : (

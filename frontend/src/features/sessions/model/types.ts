@@ -7,6 +7,7 @@ export type SessionDoc = {
   diagramModelText: string;
   userStoriesText: string;
   statusText: string;
+  requirementsLanguage: string;
   createdAtText: string;
   updatedAtText: string;
 };

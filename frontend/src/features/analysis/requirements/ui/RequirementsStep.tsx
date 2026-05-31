@@ -11,6 +11,12 @@ import Row from 'react-bootstrap/Row';
 import Stack from 'react-bootstrap/Stack';
 import Table from 'react-bootstrap/Table';
 
+import {
+  getRequirementLanguageOption,
+  getRequirementPriorityLabel,
+  REQUIREMENT_LANGUAGE_OPTIONS,
+  type RequirementLanguage,
+} from '../../model/language';
 import { ResultItemActions } from '../../shared/ui/ResultItemActions';
 
 type Props = {
@@ -19,7 +25,9 @@ type Props = {
   descriptionText: string;
   extracting: boolean;
   requirements: FunctionalRequirement[];
+  language: RequirementLanguage;
   onChangeDescription: (text: string) => void;
+  onChangeLanguage: (language: RequirementLanguage) => void;
   onSaveDescription: () => void;
   onExtract: () => void;
   onValidate: () => void;
@@ -35,7 +43,9 @@ export function RequirementsStep(props: Props) {
     descriptionText,
     extracting,
     requirements,
+    language,
     onChangeDescription,
+    onChangeLanguage,
     onSaveDescription,
     onExtract,
     onValidate,
@@ -89,6 +99,20 @@ export function RequirementsStep(props: Props) {
               onChange={(e) => onChangeDescription(e.target.value)}
             />
           </Col>
+          <Col md={5}>
+            <Form.Label>Idioma dos requisitos</Form.Label>
+            <Form.Select value={language} onChange={(e) => onChangeLanguage(e.target.value as RequirementLanguage)}>
+              {REQUIREMENT_LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.flag} {option.label}
+                </option>
+              ))}
+            </Form.Select>
+            <div className="text-muted small mt-1">
+              O prompt roda em inglês e a saída é traduzida para{' '}
+              <strong>{getRequirementLanguageOption(language).label}</strong>.
+            </div>
+          </Col>
           <Col md={12}>
             <Stack direction="horizontal" gap={2} className="action-bar">
               {hasDescription ? (
@@ -139,7 +163,7 @@ export function RequirementsStep(props: Props) {
                   <td>{r.ator || '-'}</td>
                   <td>{r.acao || '-'}</td>
                   <td>{r.objeto || '-'}</td>
-                  <td>{r.prioridade || '-'}</td>
+                  <td>{r.prioridade ? getRequirementPriorityLabel(r.prioridade, language) : '-'}</td>
                   <td className="result-table__long">{r.descricao || '-'}</td>
                   <td className="result-table__muted">{r.origem || '-'}</td>
                   <td className="text-end">
@@ -176,22 +200,22 @@ export function RequirementsStep(props: Props) {
                     }
                   />
                 </Form.Group>
-                <Form.Group>
-                  <Form.Label>Prioridade</Form.Label>
-                  <Form.Select
-                    value={draftRequirement.prioridade}
-                    onChange={(e) =>
+                  <Form.Group>
+                    <Form.Label>Prioridade</Form.Label>
+                    <Form.Select
+                      value={draftRequirement.prioridade}
+                      onChange={(e) =>
                       setDraftRequirement({
                         ...draftRequirement,
                         prioridade: e.target.value as FunctionalRequirement['prioridade'],
                       })
                     }
                   >
-                    <option value="Alta">Alta</option>
-                    <option value="Media">Média</option>
-                    <option value="Baixa">Baixa</option>
-                  </Form.Select>
-                </Form.Group>
+                    <option value="Alta">{getRequirementPriorityLabel('Alta', language)}</option>
+                    <option value="Media">{getRequirementPriorityLabel('Media', language)}</option>
+                    <option value="Baixa">{getRequirementPriorityLabel('Baixa', language)}</option>
+                    </Form.Select>
+                  </Form.Group>
                 <Form.Group>
                   <Form.Label>Ator</Form.Label>
                   <Form.Control

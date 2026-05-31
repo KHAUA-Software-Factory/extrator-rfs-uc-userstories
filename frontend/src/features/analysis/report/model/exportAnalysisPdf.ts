@@ -1,4 +1,5 @@
 import type { DiagramModel } from '../../../../plantumlBridge';
+import { getRequirementPriorityLabel, type RequirementLanguage } from '../../model/language';
 import type { FunctionalRequirement, UseCase, UserStory } from '../../model/types';
 import {
   DIAGRAM_PDF_PAGE_MARGIN,
@@ -15,6 +16,7 @@ type ExportAnalysisPdfInput = {
   diagram: DiagramModel | null;
   userStories: UserStory[];
   filename: string;
+  language: RequirementLanguage;
 };
 
 const PAGE_MARGIN = 42;
@@ -31,6 +33,7 @@ export async function exportAnalysisPdf(input: ExportAnalysisPdfInput) {
   const pageHeight = doc.internal.pageSize.getHeight();
   const contentWidth = pageWidth - PAGE_MARGIN * 2;
   let y = PAGE_MARGIN;
+  const language = input.language;
 
   function ensureSpace(height: number) {
     if (y + height <= pageHeight - PAGE_MARGIN) return;
@@ -166,7 +169,7 @@ export async function exportAnalysisPdf(input: ExportAnalysisPdfInput) {
       requirement.id,
       requirement.descricao,
       requirement.ator,
-      requirement.prioridade,
+      getRequirementPriorityLabel(requirement.prioridade, language),
     ]),
     [52, contentWidth - 202, 95, 55],
   );
