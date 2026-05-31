@@ -30,8 +30,8 @@ VITE_ENABLE_AUDIT_LOGS=true
 ```
 
 No GitHub Actions, cadastre a chave da OpenAI como secret
-`VITE_OPENAI_API_KEY`. Se o repositório já usa `OPEN_AI_KEY`, o workflow aceita
-esse nome tambem e grava o valor em `.env.production` antes do build.
+`VITE_OPENAI_API_KEY` ou `OPENAI_API_KEY`. O workflow grava esse valor em
+`.env.production` antes do build.
 
 Aviso importante: qualquer variavel `VITE_*` fica embutida no JavaScript final.
 Sem backend/proxy, a chave da OpenAI fica exposta para quem abrir o site.

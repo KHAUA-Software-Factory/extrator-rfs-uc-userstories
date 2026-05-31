@@ -48,7 +48,7 @@ jobs:
           echo "VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}" >> .env.production
           echo "VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}" >> .env.production
           echo "VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}" >> .env.production
-          echo "VITE_OPENAI_API_KEY=${{ secrets.VITE_OPENAI_API_KEY || secrets.OPEN_AI_KEY || secrets.OPENAI_API_KEY }}" >> .env.production
+          echo "VITE_OPENAI_API_KEY=${{ secrets.VITE_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}" >> .env.production
           echo "VITE_OPENAI_MODEL=${{ secrets.VITE_OPENAI_MODEL || secrets.OPENAI_MODEL }}" >> .env.production
           echo "VITE_OPENAI_BASE_URL=${{ secrets.VITE_OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}" >> .env.production
           echo "VITE_BASE_PATH=${FRONTEND_PUBLIC_PATH}" >> .env.production
